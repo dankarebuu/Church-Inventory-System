@@ -1,9 +1,10 @@
 # 🎸 WINGMACC — Church Band Inventory System
 
 A modern, responsive, real-time inventory management application designed for church music ministries and technical teams. Built with vanilla web standards and powered by a Supabase cloud backend[cite: 2, 3].
+
 ---
 
-##Preview: https://wingmacc-inventory.netlify.app/
+https://wingmacc-inventory.netlify.app/
 
 ---
 
