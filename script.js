@@ -1,6 +1,6 @@
 // ========== SUPABASE CONFIGURATION ==========
-const supabaseUrl = 'YOUR_SUPABASE_PROJECT_URL';
-const supabaseKey = 'YOUR_SUPABASE_ANON_KEY';
+const supabaseUrl = 'SUPABASE_PROJECT_URL';
+const supabaseKey = 'SUPABASE_ANON_KEY';
 
 const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
