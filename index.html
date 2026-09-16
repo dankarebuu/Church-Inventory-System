@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WINGMACC — Band Department Inventory</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="images/logo.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="images/logo.svg">
+<link rel="apple-touch-icon" href="images/logo.svg">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Icon library used for UI symbols -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- PDF export library for printable inventory reports -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body> 
+
+<!-- Welcome screen shown before the user enters the inventory app -->
+<div class="gateway-overlay" id="welcomeGateway">
+  <div class="gateway-card">
+    <img src="images/logo.svg" alt="WINGMACC logo" class="gateway-logo">
+    <span class="tape">CHURCH PROPERTY INVENTORY LOG</span>
+    <h1 class="gateway-title">Band Inventory</h1>
+    <p class="gateway-sub">Band Department Inventory System</p>
+
+    <div class="gateway-actions">
+      <button class="btn btn-primary btn-lg" id="gateLoginBtn"><i data-lucide="key" style="width: 18px; height: 18px;"></i> Login to Edit</button>
+      <button class="btn btn-ghost btn-lg" id="gateGuestBtn"><i data-lucide="eye" style="width: 18px; height: 12px;"></i> Continue as Guest (View Only)</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main application shell for the inventory dashboard -->
+<div class="app-shell">
+
+  <!-- Top navigation bar with branding, theme toggle, and account controls -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <a class="brand-link" href="/" aria-label="WINGMACC home">
+          <img src="images/logo.svg" alt="WINGMACC logo" class="site-logo">
+          <div class="brand-text">
+            <span class="tape">CHURCH PROPERTY INVENTORY LOG</span>
+            <h1>Band Inventory</h1>
+            <p style="margin-bottom: 12px;">Band Department Inventory System — shared checklist, visible for the whole team</p>
+            <p style="font-size: 9px; font-style: italic; margin: 0;">@ Dan Caleb's Project</p>
+          </div>
+        </a>
+      </div>
+
+      <div class="topbar-right" id="accountArea">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <!-- Theme switch for light and dark modes -->
+          <button class="btn btn-ghost btn-sm" id="themeToggleBtn" title="Toggle theme" aria-label="Toggle theme" style="padding: 6px 10px;">
+            <i data-lucide="moon" id="themeIcon" style="width: 15px; height: 15px;"></i>
+          </button>
+
+          <!-- Guest access controls for non-authenticated users -->
+          <div id="guestViewControls" class="guest-controls">
+            <span class="guest-label">View Only</span>
+            <button class="btn btn-primary btn-sm" id="headerLoginBtn"><i data-lucide="key" style="width: 14px; height: 14px;"></i> Login</button>
+          </div>
+
+          <!-- Signed-in user menu with profile details and logout actions -->
+          <div class="dropdown" id="profileDropdown" style="display: none;">
+            <div class="avatar" id="userAvatar">?</div>
+            <div class="dropdown-menu profile-menu">
+              <div class="profile-header" id="profileEmail">user@church.org</div>
+              <button id="menuChangePass">Change Account Username/Password</button>
+              <button id="menuLogout" class="menu-danger">Logout</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="lastUpdated" class="sync-pill">— loading —</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main dashboard content -->
+  <main class="layout">
+
+    <!-- Summary cards showing counts for the filtered inventory -->
+    <section class="stat-band" aria-label="Inventory summary">
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <!-- Two-column layout for filters and item listing -->
+    <div class="layout-grid">
+
+      <!-- Left sidebar containing search and filtering controls -->
+      <aside class="sidebar">
+        <section class="panel filters-panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Search &amp; Filter</h2>
+          </div>
+          <div class="controls">
+            <input type="text" id="search" placeholder="Search item, brand, owner, location...">
+            <select id="filterCat"><option value="">All categories</option></select>
+            <select id="filterStatus" data-label="Filter Status">
+              <option value="">All statuses</option>
+              <option value="working">Working</option>
+              <option value="flagged">Flagged (Repair / Missing)</option>
+              <option value="repair">Needs repair</option>
+              <option value="missing">Missing</option>
+            </select>
+            <select id="filterLoan">
+              <option value="">All items</option>
+              <option value="loaned">On Loan Only</option>
+            </select>
+            <button class="btn btn-ghost" id="resetBtn">Show All</button>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Right panel with the item list and management actions -->
+      <section class="panel inventory-panel">
+        <div class="panel-head panel-head--wrap">
+          <h2 class="panel-title">Inventory</h2>
+          
+          <div class="actions">
+            <!-- Hidden legacy login button; access is now managed through the gateway and profile menu -->
+            <button class="btn btn-primary" id="authBtn" style="display: none;"><i data-lucide="key" style="width: 16px; height: 16px;"></i> Login</button>
+            <button class="btn btn-primary" id="addBtn" style="display: none;"><i data-lucide="plus" style="width: 16px; height: 16px;"></i> Add</button>
+            <button class="btn btn-ghost" id="printBtn" title="Print checklist"><i data-lucide="printer" style="width: 16px; height: 16px;"></i> Print</button>
+            <button class="btn btn-ghost" id="historyBtn" title="View changes"><i data-lucide="history" style="width: 16px; height: 16px;"></i> History</button>
+
+            <!-- Separate menus for exporting and importing inventory data -->
+            <div class="dropdown">
+              <button class="btn btn-ghost"><i data-lucide="download" style="width: 16px; height: 16px;"></i> Export</button>
+              <div class="dropdown-menu">
+                <button id="exportJSON">Export as JSON</button>
+                <button id="exportCSV">Export as CSV</button>
+                <button id="exportPDF">Export as PDF</button>
+              </div>
+            </div>
+
+            <div class="dropdown">
+              <button class="btn btn-ghost"><i data-lucide="upload" style="width: 16px; height: 16px;"></i> Import</button>
+              <div class="dropdown-menu">
+                <button id="importJSONBtn">Import JSON</button>
+                <button id="importCSVBtn">Import CSV</button>
+              </div>
+            </div>
+            <input type="file" id="importFileInput" accept=".json" style="display: none;">
+            <input type="file" id="importCSVFileInput" accept=".csv" style="display: none;">
+          </div>
+          
+        </div>
+
+        <div id="content"><div class="loading">Loading inventory…</div></div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- Authentication modal for login and sign-up -->
+<div class="overlay" id="authOverlay">
+  <div class="modal">
+    <h3 id="authModalTitle">Account Login</h3>
+    <form id="authForm">
+      <!-- Additional name fields shown only when the user is creating a new account -->
+      <div id="usernameFields" style="display: none;">
+        <div class="field-row">
+          <div class="field">
+            <label>First Name</label>
+            <input type="text" id="auth_first_name" placeholder="e.g. Dan">
+          </div>
+          <div class="field">
+            <label>Last Name</label>
+            <input type="text" id="auth_last_name" placeholder="e.g. Caleb">
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Email Address</label>
+        <input type="email" id="auth_email" required placeholder="yourgmail@gmail.com">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="auth_password" required placeholder="••••••••">
+      </div>
+      <div class="modal-acts auth-acts">
+        <div class="auth-links">
+          <button type="button" class="btn btn-ghost btn-link" id="toggleAuthModeBtn">Need an account? Sign up</button>
+          <button type="button" class="btn btn-ghost btn-link btn-link--muted" id="forgotPassLink">Forgot Password?</button>
+        </div>
+        <div class="auth-buttons">
+          <button type="button" class="btn btn-ghost" id="cancelAuthBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="submitAuthBtn">Login</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Account profile settings modal -->
+<div class="overlay" id="accountOverlay">
+  <div class="modal">
+    <h3>Account Settings</h3>
+    <form id="accountForm">
+      <div class="field-row">
+        <div class="field">
+          <label>First Name</label>
+          <input type="text" id="acc_first_name" placeholder="First Name">
+        </div>
+        <div class="field">
+          <label>Last Name</label>
+          <input type="text" id="acc_last_name" placeholder="Last Name">
+        </div>
+      </div>
+      <div class="field">
+        <label>Change Password</label>
+        <input type="password" id="acc_password" placeholder="Leave blank to keep current password">
+      </div>
+      <div class="modal-acts">
+        <button type="button" class="btn btn-ghost" id="cancelAccountBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Form modal for creating and editing inventory items -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="modalTitle">Add item</h3>
+    <form id="itemForm">
+      <div class="field"><label>Category</label><input type="text" id="f_category" list="catList" required><datalist id="catList"></datalist></div>
+      <div class="field"><label>Item / equipment</label><input type="text" id="f_item" required></div>
+      <div class="field-row">
+        <div class="field"><label>Brand / model</label><input type="text" id="f_brand"></div>
+        <div class="field"><label>Qty</label><input type="number" id="f_qty" min="0" value="1"></div>
+      </div>
+      <div class="field"><label>Serial Number / Asset ID</label><input type="text" id="f_serial"></div>
+      <div class="field-row">
+        <div class="field">
+          <label>Condition / status</label>
+          <select id="f_condition">
+            <option value="working">Working</option>
+            <option value="repair">Needs repair</option>
+            <option value="missing">Missing</option>
+          </select>
+        </div>
+        <div class="field"><label>Owner</label><input type="text" id="f_owner" value="Church Property"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Storage location</label><input type="text" id="f_location" value="Stage"></div>
+        <div class="field"><label>Checked by</label><input type="text" id="f_checkedBy"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Date checked</label><input type="text" id="f_date"></div>
+        <div class="field"><label>Return Date</label><input type="date" id="f_returnDate"></div>
+      </div>
+      <div class="field"><label>Borrower Name</label><input type="text" id="f_borrower"></div>
+
+      <!-- NEW GALLERY FIELDS -->
+      <div class="field">
+        <label>Item Description (For Gallery)</label>
+        <textarea id="f_description" rows="2" placeholder="e.g. Fender Precision Bass, sunburst finish..."></textarea>
+      </div>
+      <div class="field">
+        <label>Gear Photo (Upload File)</label>
+        <input type="file" id="f_image_file" accept="image/*">
+        <input type="hidden" id="f_image"> <!-- Stores the uploaded Supabase URL -->
+        <p id="uploadStatus" style="font-size: 11px; color: var(--muted); margin-top: 4px; display: none;"></p>
+      </div>
+
+      <div class="field"><label>Remarks</label><textarea id="f_remarks" rows="2"></textarea></div>
+      <div class="modal-acts">
+        <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save item</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Overlays for change history and printable checklist export -->
+<div class="overlay" id="historyOverlay">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3>Change Log</h3>
+      <button class="close-btn" id="closeHistoryBtn">✕</button>
+    </div>
+    
+    <div class="history-controls">
+      <input type="text" id="historySearch" placeholder="Search item, user email or action...">
+      <select id="historyFilterAction">
+        <option value="">All Actions</option>
+        <option value="added">Added</option>
+        <option value="updated">Updated</option>
+        <option value="deleted">Deleted</option>
+      </select>
+    </div>
+    
+    <div id="historyContent" class="history-list"></div>
+  </div>
+</div>
+
+<div class="overlay" id="printOverlay">
+  <div class="modal modal-print">
+    <div class="print-header">
+      <div>
+        <h2>Sunday Equipment Checklist</h2>
+        <p id="printDate"></p>
+      </div>
+      
+      <div class="print-actions">
+        <select id="printCategoryFilter" class="btn btn-ghost print-cat-filter"></select>
+        <button class="btn btn-primary" onclick="window.print()"><i data-lucide="printer" style="width: 16px; height: 16px;"></i> Print Now</button>
+        <button class="close-btn" id="closePrintBtn">✕</button>
+      </div>
+    </div>
+    
+    <div id="printContent" class="print-content"></div>
+    
+    <div class="print-signature">
+      <div class="sig-line">
+        <div class="line"></div>
+        <p>Checked By (Signature over Printed Name)</p>
+      </div>
+      <div class="sig-line">
+        <div class="line"></div>
+        <p>Date & Time</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Full-size item photo viewer -->
+<div class="overlay" id="galleryOverlay">
+  <div class="modal modal-gallery">
+    <h3 id="galleryTitle" class="gallery-title">Item Name</h3>
+
+    <div class="gallery-stage">
+      <img id="galleryImage" src="" alt="Gear Image" class="gallery-img">
+      <div id="galleryNoImage" class="gallery-noimg">No Image Yet</div>
+    </div>
+
+    <p id="galleryDesc" class="gallery-desc">No description provided.</p>
+
+    <div class="modal-acts modal-acts--center">
+      <button class="btn btn-primary" id="closeGalleryBtn">Close Gallery</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password recovery modal for sending reset instructions -->
+<div class="overlay" id="forgotOverlay">
+  <div class="modal">
+    <h3>Reset Password</h3>
+    <p class="modal-note">Enter your email and we'll send you a secure reset link.</p>
+    <form id="forgotForm">
+      <div class="field">
+        <label>Email Address</label>
+        <input type="email" id="forgot_email" required placeholder="user@church.org">
+      </div>
+      <div class="modal-acts">
+        <button type="button" class="btn btn-ghost" id="cancelForgotBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="submitForgotBtn">Send Link</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Password update form shown after a recovery email link is used -->
+<div class="overlay" id="updatePassOverlay">
+  <div class="modal">
+    <h3>Set New Password</h3>
+    <p class="modal-note">Please enter your new password below.</p>
+    <form id="updatePassForm">
+      <div class="field">
+        <label>New Password</label>
+        <input type="password" id="new_password" required placeholder="••••••••" minlength="6">
+      </div>
+      <div class="modal-acts">
+        <button type="submit" class="btn btn-primary btn-block">Save New Password</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Reusable confirmation dialog for delete and reset actions -->
+<div class="overlay" id="confirmOverlay">
+  <div class="modal" style="max-width: 400px; text-align: center; padding: 32px 24px;">
+    <div id="confirmIcon" style="margin-bottom: 16px; display: flex; justify-content: center;"></div>
+    <h3 style="margin-bottom: 12px; font-size: 22px;">Are you sure?</h3>
+    <p id="confirmMessage" style="color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.5;">Do you really want to do this?</p>
+    <div class="modal-acts" style="justify-content: center; gap: 12px; margin-top: 0;">
+      <button class="btn btn-ghost" id="cancelConfirmBtn">Cancel</button>
+      <button class="btn btn-primary" id="acceptConfirmBtn" style="color: white; border: none;">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reusable alert dialog for notices and validation messages -->
+<div class="overlay" id="alertOverlay">
+  <div class="modal" style="max-width: 400px; text-align: center; padding: 32px 24px;">
+    <div id="alertIconContainer" style="margin-bottom: 16px; display: flex; justify-content: center;"></div>
+    <h3 id="alertTitle" style="margin-bottom: 12px; font-size: 22px;">Notice</h3>
+    <p id="alertMessage" style="color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.5;"></p>
+    <div class="modal-acts" style="justify-content: center; margin-top: 0;">
+      <button class="btn btn-primary" id="closeAlertBtn" style="width: 100%;">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mobile-friendly custom dropdown overlay for select controls -->
+<div class="overlay" id="customSelectOverlay">
+  <div class="modal custom-select-modal">
+    <div class="modal-header">
+      <h3 id="customSelectTitle">Select Option</h3>
+      <button class="close-btn" id="closeCustomSelectBtn">✕</button>
+    </div>
+    <div class="custom-select-list" id="customSelectList"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
