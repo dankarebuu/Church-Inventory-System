@@ -127,3 +127,27 @@ export function isSameLocalDay(isoString?: string | null, referenceDate: Date = 
     target.getDate() === referenceDate.getDate()
   );
 }
+
+/**
+ * Trims a string value and converts blank or non-string inputs to `null`.
+ */
+export function trimOrNull(value?: string | null): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+interface PostgresErrorLike {
+  code?: string;
+  message?: string;
+}
+
+/**
+ * Checks whether a Supabase/PostgREST error represents a Postgres `23505`
+ * unique-constraint violation.
+ */
+export function isUniqueConstraintError(error: PostgresErrorLike | null | undefined): boolean {
+  if (!error) return false;
+  if (error.code === '23505') return true;
+  return typeof error.message === 'string' && /duplicate key|unique constraint/i.test(error.message);
+}

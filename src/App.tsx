@@ -13,6 +13,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { AuthModal } from '@/features/auth/AuthModal';
 import { AuthProvider } from '@/features/auth/useAuth';
 import { WelcomeGateway } from '@/features/auth/WelcomeGateway';
+import { CategoriesPage } from '@/pages/CategoriesPage';
 import { InventoryPage } from '@/pages/InventoryPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 
@@ -75,16 +76,7 @@ export function AppRoutes() {
             }
           />
           <Route path="/inventory" element={<InventoryPage />} />
-          <Route
-            path="/categories"
-            element={
-              <RoutePlaceholder
-                badge="Organization"
-                title="Categories & Locations"
-                description="Manage 2-level equipment categories and storage locations."
-              />
-            }
-          />
+          <Route path="/categories" element={<CategoriesPage />} />
           <Route
             path="/checklist"
             element={

@@ -1,7 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/features/auth/useAuth';
 import { queryKeys } from '@/lib/queryKeys';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import type { Category } from '@/types/database';
+import { isUniqueConstraintError, trimOrNull } from '@/lib/utils';
+import type { Category, Database } from '@/types/database';
 
 export const DEFAULT_CATEGORY_COLOR = '#7a8290';
 
@@ -116,4 +119,288 @@ export function useCategories() {
     enabled: isSupabaseConfigured,
     initialData: isSupabaseConfigured ? undefined : EMPTY_CATEGORIES,
   });
+}
+
+export interface CreateCategoryInput {
+  name: string;
+  parent_id?: string | null;
+  color?: string;
+  icon?: string | null;
+  sort_order?: number;
+}
+
+export interface UpdateCategoryInput {
+  id: string;
+  name: string;
+  parent_id?: string | null;
+  color?: string;
+  icon?: string | null;
+  sort_order?: number;
+  previousName?: string;
+}
+
+export type DeleteCategoryTarget = string | Pick<Category, 'id'>;
+
+type CategoryInsert = Database['public']['Tables']['categories']['Insert'];
+type CategoryUpdate = Database['public']['Tables']['categories']['Update'];
+
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/**
+ * Validates and normalizes hex color strings, defaulting blank inputs to
+ * `DEFAULT_CATEGORY_COLOR`.
+ */
+export function normalizeCategoryColor(color?: string | null): string {
+  const trimmed = trimOrNull(color);
+  if (!trimmed) return DEFAULT_CATEGORY_COLOR;
+  const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+  if (!HEX_COLOR_PATTERN.test(normalized)) {
+    throw new Error('Category color must be a valid hex code (e.g. #d97740).');
+  }
+  return normalized;
+}
+
+function getNextCategorySortOrder(
+  categories: readonly Category[],
+  parentId: string | null
+): number {
+  let maxOrder = 0;
+  for (const cat of categories) {
+    if (cat.parent_id === parentId && cat.sort_order > maxOrder) {
+      maxOrder = cat.sort_order;
+    }
+  }
+  return maxOrder + 10;
+}
+
+function buildDuplicateCategoryError(name: string, parentId: string | null): Error {
+  if (parentId) {
+    return new Error(`A subcategory named "${name}" already exists under this category.`);
+  }
+  return new Error(`A category named "${name}" already exists.`);
+}
+
+/**
+ * Provides Admin-guarded CRUD mutations for 2-level categories and
+ * subcategories, keeping `inventory.category` text synced on top-level
+ * renames and translating Postgres `23505` collisions into friendly errors.
+ */
+export function useCategoryMutations() {
+  const { role } = useAuth();
+  const queryClient = useQueryClient();
+
+  const invalidateAll = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.categories }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.locations }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) }),
+    ]);
+  }, [queryClient, role]);
+
+  const assertCanMutate = useCallback(() => {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
+    }
+    if (role !== 'admin') {
+      throw new Error('Only administrators can manage categories.');
+    }
+  }, [role]);
+
+  const createMutation = useMutation<Category, Error, CreateCategoryInput>({
+    mutationFn: async (input) => {
+      assertCanMutate();
+
+      const trimmedName = input.name.trim();
+      if (!trimmedName) {
+        throw new Error('Category name is required.');
+      }
+
+      const parentId = trimOrNull(input.parent_id);
+      const cachedCategories =
+        queryClient.getQueryData<Category[]>(queryKeys.categories) ?? [];
+
+      if (parentId) {
+        const parentRow = cachedCategories.find((cat) => cat.id === parentId);
+        if (parentRow && parentRow.parent_id !== null) {
+          throw new Error('Subcategories can only be created under top-level categories.');
+        }
+      }
+
+      const color = normalizeCategoryColor(input.color);
+      const icon = trimOrNull(input.icon) ?? 'tag';
+      const sortOrder =
+        input.sort_order ?? getNextCategorySortOrder(cachedCategories, parentId);
+
+      const insertPayload: CategoryInsert = {
+        name: trimmedName,
+        parent_id: parentId,
+        color,
+        icon,
+        sort_order: sortOrder,
+      };
+
+      const { data, error } = await supabase
+        .from('categories')
+        .insert([insertPayload])
+        .select('*')
+        .single();
+
+      if (error) {
+        if (isUniqueConstraintError(error)) {
+          throw buildDuplicateCategoryError(trimmedName, parentId);
+        }
+        throw new Error(error.message);
+      }
+
+      await invalidateAll();
+      return data;
+    },
+  });
+
+  const updateMutation = useMutation<Category, Error, UpdateCategoryInput>({
+    mutationFn: async (input) => {
+      assertCanMutate();
+
+      const trimmedName = input.name.trim();
+      if (!trimmedName) {
+        throw new Error('Category name is required.');
+      }
+
+      const cachedCategories =
+        queryClient.getQueryData<Category[]>(queryKeys.categories) ?? [];
+      const existing = cachedCategories.find((cat) => cat.id === input.id);
+      const nextParentId =
+        input.parent_id !== undefined
+          ? trimOrNull(input.parent_id)
+          : (existing?.parent_id ?? null);
+
+      if (nextParentId === input.id) {
+        throw new Error('A category cannot be its own parent.');
+      }
+
+      if (nextParentId !== null) {
+        const hasChildren = cachedCategories.some((cat) => cat.parent_id === input.id);
+        if (hasChildren) {
+          throw new Error('Cannot nest a category that already has subcategories.');
+        }
+        const parentRow = cachedCategories.find((cat) => cat.id === nextParentId);
+        if (parentRow && parentRow.parent_id !== null) {
+          throw new Error('Subcategories can only be nested under top-level categories.');
+        }
+      }
+
+      const updatePayload: CategoryUpdate = {
+        name: trimmedName,
+        parent_id: nextParentId,
+      };
+
+      if (input.color !== undefined) {
+        updatePayload.color = normalizeCategoryColor(input.color);
+      }
+      if (input.icon !== undefined) {
+        updatePayload.icon = trimOrNull(input.icon) ?? 'tag';
+      }
+      if (input.sort_order !== undefined) {
+        updatePayload.sort_order = input.sort_order;
+      }
+
+      const { data, error } = await supabase
+        .from('categories')
+        .update(updatePayload)
+        .eq('id', input.id)
+        .select('*')
+        .single();
+
+      if (error) {
+        if (isUniqueConstraintError(error)) {
+          throw buildDuplicateCategoryError(trimmedName, nextParentId);
+        }
+        throw new Error(error.message);
+      }
+
+      const isTopLevel = nextParentId === null && (existing ? existing.parent_id === null : true);
+      const previousName = input.previousName ?? existing?.name;
+      const nameChanged =
+        previousName !== undefined ? previousName.trim() !== trimmedName : true;
+
+      if (isTopLevel && nameChanged) {
+        const { error: syncError } = await supabase
+          .from('inventory')
+          .update({ category: trimmedName })
+          .eq('category_id', input.id);
+
+        if (syncError) {
+          await queryClient.invalidateQueries({ queryKey: queryKeys.categories });
+          throw new Error(syncError.message);
+        }
+      } else if (
+        existing?.parent_id &&
+        nextParentId &&
+        existing.parent_id !== nextParentId
+      ) {
+        const nextParent = cachedCategories.find((cat) => cat.id === nextParentId);
+        if (nextParent) {
+          const { error: syncError } = await supabase
+            .from('inventory')
+            .update({ category_id: nextParent.id, category: nextParent.name })
+            .eq('subcategory_id', input.id);
+
+          if (syncError) {
+            await queryClient.invalidateQueries({ queryKey: queryKeys.categories });
+            throw new Error(syncError.message);
+          }
+        }
+      }
+
+      await invalidateAll();
+      return data;
+    },
+  });
+
+  const deleteMutation = useMutation<void, Error, DeleteCategoryTarget>({
+    mutationFn: async (target) => {
+      assertCanMutate();
+
+      const categoryId = typeof target === 'string' ? target : target.id;
+      const { error } = await supabase
+        .from('categories')
+        .delete()
+        .eq('id', categoryId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await invalidateAll();
+    },
+  });
+
+  const { mutateAsync: runCreate } = createMutation;
+  const { mutateAsync: runUpdate } = updateMutation;
+  const { mutateAsync: runDelete } = deleteMutation;
+
+  const createCategory = useCallback(
+    (input: CreateCategoryInput) => runCreate(input),
+    [runCreate]
+  );
+
+  const updateCategory = useCallback(
+    (input: UpdateCategoryInput) => runUpdate(input),
+    [runUpdate]
+  );
+
+  const deleteCategory = useCallback(
+    (target: DeleteCategoryTarget) => runDelete(target),
+    [runDelete]
+  );
+
+  return {
+    createCategory,
+    updateCategory,
+    deleteCategory,
+    isCreating: createMutation.isPending,
+    isUpdating: updateMutation.isPending,
+    isDeleting: deleteMutation.isPending,
+    isSaving: createMutation.isPending || updateMutation.isPending,
+  };
 }
