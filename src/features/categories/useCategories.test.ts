@@ -40,6 +40,17 @@ const {
     resultsByOp.get(key) ?? { data: null, error: null };
 
   const from = vi.fn((table: string) => ({
+    select: vi.fn(() => {
+      const res = resultsByOp.get(`${table}:select`) ?? { data: [], error: null };
+      const chain = {
+        order: vi.fn(() => chain),
+        then: (
+          onFulfilled: (value: QueryResult) => unknown,
+          onRejected?: (reason: unknown) => unknown
+        ) => Promise.resolve(res).then(onFulfilled, onRejected),
+      };
+      return chain;
+    }),
     insert: vi.fn((payload: unknown) => {
       inserts.push({ table, payload });
       const res = getResult(`${table}:insert`);
@@ -332,5 +343,202 @@ describe('useCategoryMutations', () => {
     await expect(
       result.current.updateCategory({ id: 'cat-kb', name: 'Drums' })
     ).rejects.toThrow(/already exists/i);
+  });
+
+  it('syncs inventory on subcategory promotion to top-level and leaf category demotion to subcategory', async () => {
+    const queryClient = createTestQueryClient();
+    const drums: Category = {
+      id: 'cat-drums',
+      name: 'Drums',
+      parent_id: null,
+      color: '#d97740',
+      icon: 'drum',
+      sort_order: 10,
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    const spares: Category = {
+      id: 'cat-spares',
+      name: 'Spares & Shared',
+      parent_id: null,
+      color: '#4e7fb0',
+      icon: 'cable',
+      sort_order: 20,
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    const cables: Category = {
+      id: 'cat-cables',
+      name: 'XLR Cables',
+      parent_id: null,
+      color: '#4e7fb0',
+      icon: 'cable',
+      sort_order: 30,
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    const snares: Category = {
+      id: 'sub-snare',
+      name: 'Snares',
+      parent_id: 'cat-drums',
+      color: '#d97740',
+      icon: 'drum',
+      sort_order: 10,
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    queryClient.setQueryData(queryKeys.categories, [drums, spares, cables, snares]);
+
+    const { result } = renderHook(() => useCategoryMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    // 1. Promote subcategory 'sub-snare' -> top-level (parent_id: null)
+    setResult('categories:update', {
+      data: { ...snares, name: 'Snare Drums', parent_id: null },
+      error: null,
+    });
+    setResult('inventory:update', { data: null, error: null });
+
+    await result.current.updateCategory({
+      id: 'sub-snare',
+      name: 'Snare Drums',
+      parent_id: null,
+    });
+
+    expect(updateCalls.find((c) => c.table === 'categories')?.payload).toMatchObject({
+      name: 'Snare Drums',
+      parent_id: null,
+    });
+    expect(updateCalls.find((c) => c.table === 'inventory')).toEqual({
+      table: 'inventory',
+      payload: {
+        category_id: 'sub-snare',
+        category: 'Snare Drums',
+        subcategory_id: null,
+      },
+      col: 'subcategory_id',
+      id: 'sub-snare',
+    });
+
+    // 2. Demote leaf top-level 'cat-cables' -> subcategory under 'cat-spares'
+    updateCalls.length = 0;
+    queryClient.setQueryData(queryKeys.categories, [drums, spares, cables, snares]);
+    setResult('categories:update', {
+      data: { ...cables, parent_id: 'cat-spares' },
+      error: null,
+    });
+
+    await result.current.updateCategory({
+      id: 'cat-cables',
+      name: 'XLR Cables',
+      parent_id: 'cat-spares',
+    });
+
+    expect(updateCalls.find((c) => c.table === 'categories')?.payload).toMatchObject({
+      name: 'XLR Cables',
+      parent_id: 'cat-spares',
+    });
+    expect(updateCalls.find((c) => c.table === 'inventory')).toEqual({
+      table: 'inventory',
+      payload: {
+        category_id: 'cat-spares',
+        category: 'Spares & Shared',
+        subcategory_id: 'cat-cables',
+      },
+      col: 'category_id',
+      id: 'cat-cables',
+    });
+  });
+
+  it('populates cold cache via fetchCategories for 2-level guards and omits parent_id when undefined', async () => {
+    const queryClient = createTestQueryClient();
+    const drums: Category = {
+      id: 'cat-drums',
+      name: 'Drums',
+      parent_id: null,
+      color: '#d97740',
+      icon: 'drum',
+      sort_order: 10,
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    const snares: Category = {
+      id: 'sub-snare',
+      name: 'Snares',
+      parent_id: 'cat-drums',
+      color: '#d97740',
+      icon: 'drum',
+      sort_order: 10,
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    const spares: Category = {
+      id: 'cat-spares',
+      name: 'Spares & Shared',
+      parent_id: null,
+      color: '#4e7fb0',
+      icon: 'cable',
+      sort_order: 20,
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    // Cold cache: nothing set via setQueryData, only categories:select configured
+    setResult('categories:select', { data: [drums, snares, spares], error: null });
+
+    const { result } = renderHook(() => useCategoryMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    // Cold-cache 2-level hierarchy guard must reject nesting under a subcategory
+    await expect(
+      result.current.createCategory({ name: 'Piccolo', parent_id: 'sub-snare' })
+    ).rejects.toThrow(/top-level/i);
+    expect(insertCalls).toHaveLength(0);
+
+    // Cold-cache 2-level hierarchy guard must reject nesting a parent that has subcategories
+    await expect(
+      result.current.updateCategory({
+        id: 'cat-drums',
+        name: 'Drums',
+        parent_id: 'cat-spares',
+      })
+    ).rejects.toThrow(/already has subcategories/i);
+
+    // Cold-cache updateCategory omitting parent_id on a subcategory must omit parent_id
+    // from payload and preserve subcategory identity (no inventory overwrite)
+    setResult('categories:update', {
+      data: { ...snares, name: 'Concert Snares' },
+      error: null,
+    });
+
+    await result.current.updateCategory({
+      id: 'sub-snare',
+      name: 'Concert Snares',
+    });
+
+    const catUpdate = updateCalls.find((c) => c.table === 'categories');
+    expect(catUpdate).toBeDefined();
+    expect('parent_id' in (catUpdate?.payload ?? {})).toBe(false);
+    expect(catUpdate?.payload).toEqual({ name: 'Concert Snares' });
+    expect(updateCalls.some((c) => c.table === 'inventory')).toBe(false);
+
+    // Cold-cache updateCategory omitting parent_id on a top-level category must omit
+    // parent_id from payload AND sync inventory.category when name changes
+    updateCalls.length = 0;
+    setResult('categories:update', {
+      data: { ...drums, name: 'Percussion' },
+      error: null,
+    });
+    setResult('inventory:update', { data: null, error: null });
+
+    await result.current.updateCategory({
+      id: 'cat-drums',
+      name: 'Percussion',
+    });
+
+    const topUpdate = updateCalls.find((c) => c.table === 'categories');
+    expect('parent_id' in (topUpdate?.payload ?? {})).toBe(false);
+    expect(updateCalls.find((c) => c.table === 'inventory')).toEqual({
+      table: 'inventory',
+      payload: { category: 'Percussion' },
+      col: 'category_id',
+      id: 'cat-drums',
+    });
   });
 });

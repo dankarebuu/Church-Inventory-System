@@ -180,6 +180,82 @@ function buildDuplicateCategoryError(name: string, parentId: string | null): Err
   return new Error(`A category named "${name}" already exists.`);
 }
 
+interface InventorySyncSpec {
+  payload: Database['public']['Tables']['inventory']['Update'];
+  matchColumn: 'category_id' | 'subcategory_id';
+  matchValue: string;
+}
+
+function resolveInventorySyncSpec(params: {
+  categoryId: string;
+  trimmedName: string;
+  previousName: string | undefined;
+  previousParentId: string | null;
+  nextParentId: string | null;
+  nextParent: Category | undefined;
+}): InventorySyncSpec | null {
+  const {
+    categoryId,
+    trimmedName,
+    previousName,
+    previousParentId,
+    nextParentId,
+    nextParent,
+  } = params;
+
+  if (previousParentId !== null && nextParentId === null) {
+    return {
+      payload: {
+        category_id: categoryId,
+        category: trimmedName,
+        subcategory_id: null,
+      },
+      matchColumn: 'subcategory_id',
+      matchValue: categoryId,
+    };
+  }
+
+  if (previousParentId === null && nextParentId !== null && nextParent) {
+    return {
+      payload: {
+        category_id: nextParent.id,
+        category: nextParent.name,
+        subcategory_id: categoryId,
+      },
+      matchColumn: 'category_id',
+      matchValue: categoryId,
+    };
+  }
+
+  if (
+    previousParentId !== null &&
+    nextParentId !== null &&
+    previousParentId !== nextParentId &&
+    nextParent
+  ) {
+    return {
+      payload: {
+        category_id: nextParent.id,
+        category: nextParent.name,
+      },
+      matchColumn: 'subcategory_id',
+      matchValue: categoryId,
+    };
+  }
+
+  const nameChanged =
+    previousName !== undefined ? previousName.trim() !== trimmedName : true;
+  if (previousParentId === null && nextParentId === null && nameChanged) {
+    return {
+      payload: { category: trimmedName },
+      matchColumn: 'category_id',
+      matchValue: categoryId,
+    };
+  }
+
+  return null;
+}
+
 /**
  * Provides Admin-guarded CRUD mutations for 2-level categories and
  * subcategories, keeping `inventory.category` text synced on top-level
@@ -216,11 +292,13 @@ export function useCategoryMutations() {
       }
 
       const parentId = trimOrNull(input.parent_id);
-      const cachedCategories =
-        queryClient.getQueryData<Category[]>(queryKeys.categories) ?? [];
+      const allCategories = await queryClient.ensureQueryData({
+        queryKey: queryKeys.categories,
+        queryFn: fetchCategories,
+      });
 
       if (parentId) {
-        const parentRow = cachedCategories.find((cat) => cat.id === parentId);
+        const parentRow = allCategories.find((cat) => cat.id === parentId);
         if (parentRow && parentRow.parent_id !== null) {
           throw new Error('Subcategories can only be created under top-level categories.');
         }
@@ -229,7 +307,7 @@ export function useCategoryMutations() {
       const color = normalizeCategoryColor(input.color);
       const icon = trimOrNull(input.icon) ?? 'tag';
       const sortOrder =
-        input.sort_order ?? getNextCategorySortOrder(cachedCategories, parentId);
+        input.sort_order ?? getNextCategorySortOrder(allCategories, parentId);
 
       const insertPayload: CategoryInsert = {
         name: trimmedName,
@@ -266,33 +344,42 @@ export function useCategoryMutations() {
         throw new Error('Category name is required.');
       }
 
-      const cachedCategories =
-        queryClient.getQueryData<Category[]>(queryKeys.categories) ?? [];
-      const existing = cachedCategories.find((cat) => cat.id === input.id);
-      const nextParentId =
-        input.parent_id !== undefined
-          ? trimOrNull(input.parent_id)
-          : (existing?.parent_id ?? null);
+      const allCategories = await queryClient.ensureQueryData({
+        queryKey: queryKeys.categories,
+        queryFn: fetchCategories,
+      });
+      const existing = allCategories.find((cat) => cat.id === input.id);
+      const previousParentId = existing?.parent_id ?? null;
+      const hasExplicitParent = input.parent_id !== undefined;
+      const nextParentId = hasExplicitParent
+        ? trimOrNull(input.parent_id)
+        : previousParentId;
+      let nextParent: Category | undefined;
 
       if (nextParentId === input.id) {
         throw new Error('A category cannot be its own parent.');
       }
 
-      if (nextParentId !== null) {
-        const hasChildren = cachedCategories.some((cat) => cat.parent_id === input.id);
+      if (hasExplicitParent && nextParentId !== null) {
+        const hasChildren = allCategories.some((cat) => cat.parent_id === input.id);
         if (hasChildren) {
           throw new Error('Cannot nest a category that already has subcategories.');
         }
-        const parentRow = cachedCategories.find((cat) => cat.id === nextParentId);
-        if (parentRow && parentRow.parent_id !== null) {
+        nextParent = allCategories.find((cat) => cat.id === nextParentId);
+        if (!nextParent) {
+          throw new Error('Selected parent category was not found.');
+        }
+        if (nextParent.parent_id !== null) {
           throw new Error('Subcategories can only be nested under top-level categories.');
         }
       }
 
       const updatePayload: CategoryUpdate = {
         name: trimmedName,
-        parent_id: nextParentId,
       };
+      if (hasExplicitParent) {
+        updatePayload.parent_id = nextParentId;
+      }
 
       if (input.color !== undefined) {
         updatePayload.color = normalizeCategoryColor(input.color);
@@ -318,37 +405,24 @@ export function useCategoryMutations() {
         throw new Error(error.message);
       }
 
-      const isTopLevel = nextParentId === null && (existing ? existing.parent_id === null : true);
-      const previousName = input.previousName ?? existing?.name;
-      const nameChanged =
-        previousName !== undefined ? previousName.trim() !== trimmedName : true;
+      const syncSpec = resolveInventorySyncSpec({
+        categoryId: input.id,
+        trimmedName,
+        previousName: input.previousName ?? existing?.name,
+        previousParentId,
+        nextParentId,
+        nextParent,
+      });
 
-      if (isTopLevel && nameChanged) {
+      if (syncSpec) {
         const { error: syncError } = await supabase
           .from('inventory')
-          .update({ category: trimmedName })
-          .eq('category_id', input.id);
+          .update(syncSpec.payload)
+          .eq(syncSpec.matchColumn, syncSpec.matchValue);
 
         if (syncError) {
           await queryClient.invalidateQueries({ queryKey: queryKeys.categories });
           throw new Error(syncError.message);
-        }
-      } else if (
-        existing?.parent_id &&
-        nextParentId &&
-        existing.parent_id !== nextParentId
-      ) {
-        const nextParent = cachedCategories.find((cat) => cat.id === nextParentId);
-        if (nextParent) {
-          const { error: syncError } = await supabase
-            .from('inventory')
-            .update({ category_id: nextParent.id, category: nextParent.name })
-            .eq('subcategory_id', input.id);
-
-          if (syncError) {
-            await queryClient.invalidateQueries({ queryKey: queryKeys.categories });
-            throw new Error(syncError.message);
-          }
         }
       }
 
