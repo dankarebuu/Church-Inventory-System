@@ -1,0 +1,365 @@
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, useLocation } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
+import type { ProfileRecord } from '@/types/database';
+import { AuthProvider, useAuth } from './useAuth';
+
+type AuthStateCallback = (event: AuthChangeEvent, session: Session | null) => void;
+
+const {
+  mockGetSession,
+  mockOnAuthStateChange,
+  mockSignOut,
+  mockFrom,
+  mockMaybeSingle,
+  mockEq,
+  mockSelect,
+  mockUnsubscribe,
+  getAuthCallback,
+  resetAuthCallback,
+} = vi.hoisted(() => {
+  let callback: AuthStateCallback | null = null;
+  const unsubscribe = vi.fn();
+  const maybeSingle = vi.fn();
+  const eq = vi.fn(() => ({ maybeSingle }));
+  const select = vi.fn(() => ({ eq }));
+  const from = vi.fn(() => ({ select }));
+  const getSession = vi.fn();
+  const signOut = vi.fn();
+  const onAuthStateChange = vi.fn((cb: AuthStateCallback) => {
+    callback = cb;
+    return {
+      data: {
+        subscription: {
+          unsubscribe,
+        },
+      },
+    };
+  });
+
+  return {
+    mockGetSession: getSession,
+    mockOnAuthStateChange: onAuthStateChange,
+    mockSignOut: signOut,
+    mockFrom: from,
+    mockMaybeSingle: maybeSingle,
+    mockEq: eq,
+    mockSelect: select,
+    mockUnsubscribe: unsubscribe,
+    getAuthCallback: () => callback,
+    resetAuthCallback: () => {
+      callback = null;
+    },
+  };
+});
+
+vi.mock('@/lib/supabase', () => ({
+  isSupabaseConfigured: true,
+  supabase: {
+    auth: {
+      getSession: mockGetSession,
+      onAuthStateChange: mockOnAuthStateChange,
+      signOut: mockSignOut,
+    },
+    from: mockFrom,
+  },
+}));
+
+function makeUser(overrides: Partial<User> = {}): User {
+  return {
+    id: 'user-123',
+    app_metadata: {},
+    user_metadata: { first_name: 'Dan', last_name: 'Caleb' },
+    aud: 'authenticated',
+    created_at: '2026-11-18T00:00:00.000Z',
+    email: 'dan@wingmacc.org',
+    ...overrides,
+  } as User;
+}
+
+function makeSession(user: User): Session {
+  return {
+    access_token: 'access-token',
+    refresh_token: 'refresh-token',
+    expires_in: 3600,
+    token_type: 'bearer',
+    user,
+  } as Session;
+}
+
+function AuthProbe() {
+  const auth = useAuth();
+  const location = useLocation();
+
+  return (
+    <div>
+      <span data-testid="loading">{String(auth.isLoading)}</span>
+      <span data-testid="role">{auth.role}</span>
+      <span data-testid="user-email">{auth.user?.email ?? 'none'}</span>
+      <span data-testid="profile-name">
+        {auth.profile ? `${auth.profile.first_name ?? ''} ${auth.profile.last_name ?? ''}`.trim() : 'none'}
+      </span>
+      <span data-testid="theme">{auth.theme}</span>
+      <span data-testid="show-gateway">{String(auth.showGateway)}</span>
+      <span data-testid="auth-modal-open">{String(auth.isAuthModalOpen)}</span>
+      <span data-testid="pathname">{location.pathname}</span>
+      <button type="button" onClick={auth.toggleTheme}>
+        Toggle Theme
+      </button>
+      <button type="button" onClick={auth.dismissGateway}>
+        Dismiss Gateway
+      </button>
+      <button type="button" onClick={() => auth.openAuthModal()}>
+        Open Auth
+      </button>
+      <button type="button" onClick={auth.closeAuthModal}>
+        Close Auth
+      </button>
+      <button type="button" onClick={() => void auth.signOut()}>
+        Sign Out
+      </button>
+      <button type="button" onClick={() => void auth.refreshProfile()}>
+        Refresh Profile
+      </button>
+    </div>
+  );
+}
+
+function renderWithAuth(initialEntries: string[] = ['/dashboard']) {
+  return render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    </MemoryRouter>
+  );
+}
+
+describe('useAuth / AuthProvider', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetAuthCallback();
+    localStorage.clear();
+    sessionStorage.clear();
+    document.documentElement.removeAttribute('data-theme');
+    mockSignOut.mockResolvedValue({ error: null });
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    document.documentElement.removeAttribute('data-theme');
+  });
+
+  it('resolves guest role without querying profiles when session is null and transitions isLoading cleanly', async () => {
+    let resolveSession: ((value: { data: { session: Session | null }; error: null }) => void) | undefined;
+    mockGetSession.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSession = resolve;
+      })
+    );
+
+    renderWithAuth();
+
+    expect(screen.getByTestId('loading')).toHaveTextContent('true');
+    expect(screen.getByTestId('role')).toHaveTextContent('guest');
+
+    await act(async () => {
+      resolveSession?.({ data: { session: null }, error: null });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+
+    expect(screen.getByTestId('role')).toHaveTextContent('guest');
+    expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    expect(screen.getByTestId('show-gateway')).toHaveTextContent('true');
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('fetches profile row for authenticated users and maps admin and member roles', async () => {
+    const adminUser = makeUser({ id: 'admin-1', email: 'admin@wingmacc.org' });
+    const adminProfile: ProfileRecord = {
+      id: 'admin-1',
+      email: 'admin@wingmacc.org',
+      first_name: 'Dan',
+      last_name: 'Caleb',
+      role: 'admin',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(adminUser) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValue({ data: adminProfile, error: null });
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+
+    expect(mockFrom).toHaveBeenCalledWith('profiles');
+    expect(mockSelect).toHaveBeenCalled();
+    expect(mockEq).toHaveBeenCalledWith('id', 'admin-1');
+    expect(screen.getByTestId('role')).toHaveTextContent('admin');
+    expect(screen.getByTestId('user-email')).toHaveTextContent('admin@wingmacc.org');
+    expect(screen.getByTestId('profile-name')).toHaveTextContent('Dan Caleb');
+    expect(screen.getByTestId('show-gateway')).toHaveTextContent('false');
+  });
+
+  it('falls back safely to member role when profile trigger has not created a row yet', async () => {
+    const newMember = makeUser({ id: 'member-1', email: 'newmember@wingmacc.org' });
+
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(newMember) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+
+    expect(mockFrom).toHaveBeenCalledWith('profiles');
+    expect(screen.getByTestId('role')).toHaveTextContent('member');
+    expect(screen.getByTestId('profile-name')).toHaveTextContent('none');
+  });
+
+  it('navigates to /reset-password when onAuthStateChange emits PASSWORD_RECOVERY', async () => {
+    const recoveryUser = makeUser({ id: 'rec-1', email: 'recover@wingmacc.org' });
+    const recoveryProfile: ProfileRecord = {
+      id: 'rec-1',
+      email: 'recover@wingmacc.org',
+      first_name: 'Band',
+      last_name: 'Member',
+      role: 'member',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    mockGetSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValue({ data: recoveryProfile, error: null });
+
+    const { unmount } = renderWithAuth(['/dashboard']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/dashboard');
+
+    await act(async () => {
+      const cb = getAuthCallback();
+      expect(cb).toBeTypeOf('function');
+      cb?.('PASSWORD_RECOVERY', makeSession(recoveryUser));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/reset-password');
+    });
+
+    expect(screen.getByTestId('role')).toHaveTextContent('member');
+    unmount();
+    expect(mockUnsubscribe).toHaveBeenCalled();
+  });
+
+  it('persists wingmacc_theme to localStorage and documentElement[data-theme] on toggleTheme', async () => {
+    const user = userEvent.setup();
+    mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+
+    expect(screen.getByTestId('theme')).toHaveTextContent('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+
+    await user.click(screen.getByRole('button', { name: 'Toggle Theme' }));
+
+    expect(screen.getByTestId('theme')).toHaveTextContent('dark');
+    expect(localStorage.getItem('wingmacc_theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+
+    await user.click(screen.getByRole('button', { name: 'Toggle Theme' }));
+
+    expect(screen.getByTestId('theme')).toHaveTextContent('light');
+    expect(localStorage.getItem('wingmacc_theme')).toBe('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+  });
+
+  it('persists gateway dismissal in sessionStorage and supports modal/refreshProfile/signOut actions', async () => {
+    const user = userEvent.setup();
+    const memberUser = makeUser({ id: 'member-2', email: 'member@wingmacc.org' });
+    const initialProfile: ProfileRecord = {
+      id: 'member-2',
+      email: 'member@wingmacc.org',
+      first_name: 'Old',
+      last_name: 'Name',
+      role: 'member',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    const updatedProfile: ProfileRecord = {
+      ...initialProfile,
+      first_name: 'Updated',
+      last_name: 'Player',
+    };
+
+    mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+
+    expect(screen.getByTestId('show-gateway')).toHaveTextContent('true');
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss Gateway' }));
+    expect(screen.getByTestId('show-gateway')).toHaveTextContent('false');
+    expect(sessionStorage.getItem('wingmacc_gateway_dismissed')).toBe('true');
+
+    await user.click(screen.getByRole('button', { name: 'Open Auth' }));
+    expect(screen.getByTestId('auth-modal-open')).toHaveTextContent('true');
+    await user.click(screen.getByRole('button', { name: 'Close Auth' }));
+    expect(screen.getByTestId('auth-modal-open')).toHaveTextContent('false');
+
+    mockMaybeSingle.mockResolvedValueOnce({ data: initialProfile, error: null });
+    await act(async () => {
+      getAuthCallback()?.('SIGNED_IN', makeSession(memberUser));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-name')).toHaveTextContent('Old Name');
+    });
+
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(memberUser) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({ data: updatedProfile, error: null });
+    await user.click(screen.getByRole('button', { name: 'Refresh Profile' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-name')).toHaveTextContent('Updated Player');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Sign Out' }));
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('guest');
+      expect(screen.getByTestId('show-gateway')).toHaveTextContent('true');
+    });
+    expect(sessionStorage.getItem('wingmacc_gateway_dismissed')).toBeNull();
+  });
+});
