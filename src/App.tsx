@@ -13,6 +13,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { AuthModal } from '@/features/auth/AuthModal';
 import { AuthProvider } from '@/features/auth/useAuth';
 import { WelcomeGateway } from '@/features/auth/WelcomeGateway';
+import { InventoryPage } from '@/pages/InventoryPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 
 interface RoutePlaceholderProps {
@@ -73,16 +74,7 @@ export function AppRoutes() {
               />
             }
           />
-          <Route
-            path="/inventory"
-            element={
-              <RoutePlaceholder
-                badge="Gear Catalog"
-                title="Inventory Catalog"
-                description="Browse, filter, inspect, and manage WINGMACC band equipment."
-              />
-            }
-          />
+          <Route path="/inventory" element={<InventoryPage />} />
           <Route
             path="/categories"
             element={
