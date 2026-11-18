@@ -51,7 +51,7 @@ This runbook upgrades the live Supabase project (`gcplffcftuhjthtcnjjc`) for the
 4. Verify locally:
    - **Guest mode:** Opens `Dashboard`, `Inventory`, `Categories & Locations`, and `Sunday Checklist` (Print/PDF only); shows anonymous `On Loan` / availability counts without borrower names or Activity Log.
    - **Member mode:** Quick check-off (`OK` / `Fix` / `Lost`) via `member_check_item`, live Sunday Check-Off progress sync, and Loans check-out / check-in.
-   - **Admin mode:** Full Item CRUD (including `qty = 0` and up to 4 `gear-photos`), Category/Subcategory/Location CRUD, CSV/JSON import & export, Activity Log Undo/Restore, and Team Roles.
+   - **Admin mode:** Full Item CRUD (including `qty = 0` and up to 4 `gear-photos`), Category/Subcategory/Location CRUD, CSV/JSON import & export, Activity Log Undo/Restore, and Team Roles view (role updates via UI activate after Phase 2 grants `UPDATE (role)` to admins; promote test admins in SQL Editor during Phase 1).
    - **Theme & Recovery:** Light/Dark toggle (`wingmacc_theme`) and password recovery flow (`/reset-password`).
 
 ---

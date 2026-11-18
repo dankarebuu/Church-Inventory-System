@@ -109,19 +109,13 @@ END $$;
 -- ----------------------------------------------------------------------------
 -- 3. Guest privacy lockdown & table/view/function grants
 -- ----------------------------------------------------------------------------
-REVOKE ALL ON public.inventory FROM anon;
-REVOKE ALL ON public.loans FROM anon;
-REVOKE ALL ON public.history_log FROM anon;
-REVOKE ALL ON public.profiles FROM anon;
-REVOKE ALL ON public.categories FROM anon;
-REVOKE ALL ON public.locations FROM anon;
-
-REVOKE ALL ON public.inventory FROM authenticated;
-REVOKE ALL ON public.loans FROM authenticated;
-REVOKE ALL ON public.history_log FROM authenticated;
-REVOKE ALL ON public.profiles FROM authenticated;
-REVOKE ALL ON public.categories FROM authenticated;
-REVOKE ALL ON public.locations FROM authenticated;
+REVOKE ALL ON public.inventory FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.loans FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.history_log FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.profiles FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.categories FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.locations FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.inventory_public FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT ON public.inventory_public TO anon, authenticated;
 GRANT SELECT ON public.categories, public.locations TO anon, authenticated;
@@ -158,45 +152,34 @@ $$;
 REVOKE ALL ON FUNCTION public.has_other_admin(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.has_other_admin(uuid) TO authenticated;
 
-CREATE OR REPLACE FUNCTION public.prevent_last_admin_removal()
+CREATE OR REPLACE FUNCTION public.lock_profile_role_mutations()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-DECLARE
-  v_other_admins int;
 BEGIN
-  IF TG_OP = 'DELETE' THEN
-    IF OLD.role = 'admin' THEN
-      SELECT count(*)
-        INTO v_other_admins
-        FROM public.profiles
-       WHERE role = 'admin'
-         AND id <> OLD.id;
+  -- Serialize role/delete mutations across concurrent transactions so
+  -- AFTER STATEMENT checks observe committed changes from peer sessions.
+  PERFORM pg_advisory_xact_lock(hashtext('public.profiles'), hashtext('last_admin'));
+  RETURN NULL;
+END;
+$$;
 
-      IF v_other_admins = 0 THEN
-        RAISE EXCEPTION 'Cannot remove the last remaining admin profile'
-          USING ERRCODE = '42501';
-      END IF;
-    END IF;
-    RETURN OLD;
-  END IF;
-
-  IF TG_OP = 'UPDATE' THEN
-    IF OLD.role = 'admin' AND NEW.role IS DISTINCT FROM 'admin' THEN
-      SELECT count(*)
-        INTO v_other_admins
-        FROM public.profiles
-       WHERE role = 'admin'
-         AND id <> OLD.id;
-
-      IF v_other_admins = 0 THEN
-        RAISE EXCEPTION 'Cannot demote the last remaining admin'
-          USING ERRCODE = '42501';
-      END IF;
-    END IF;
-    RETURN NEW;
+CREATE OR REPLACE FUNCTION public.ensure_remaining_admin()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE role = 'admin'
+  ) THEN
+    RAISE EXCEPTION 'Cannot demote or remove the last remaining admin'
+      USING ERRCODE = '42501';
   END IF;
 
   RETURN NULL;
@@ -204,10 +187,19 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_prevent_last_admin_removal ON public.profiles;
-CREATE TRIGGER trg_prevent_last_admin_removal
+DROP FUNCTION IF EXISTS public.prevent_last_admin_removal();
+
+DROP TRIGGER IF EXISTS trg_lock_profile_role_mutations ON public.profiles;
+CREATE TRIGGER trg_lock_profile_role_mutations
   BEFORE UPDATE OF role OR DELETE ON public.profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION public.prevent_last_admin_removal();
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION public.lock_profile_role_mutations();
+
+DROP TRIGGER IF EXISTS trg_ensure_remaining_admin ON public.profiles;
+CREATE TRIGGER trg_ensure_remaining_admin
+  AFTER UPDATE OF role OR DELETE ON public.profiles
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION public.ensure_remaining_admin();
 
 -- ----------------------------------------------------------------------------
 -- 5. Drop legacy/permissive policies & enable strict RLS across public tables

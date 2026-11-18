@@ -610,8 +610,8 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  IF p_condition NOT IN ('working', 'repair', 'missing') THEN
-    RAISE EXCEPTION 'Invalid condition %. Must be working, repair, or missing.', p_condition
+  IF p_condition IS NULL OR p_condition NOT IN ('working', 'repair', 'missing') THEN
+    RAISE EXCEPTION 'Invalid condition %. Must be working, repair, or missing.', coalesce(p_condition, '<NULL>')
       USING ERRCODE = '22023';
   END IF;
 
@@ -702,14 +702,30 @@ $$;
 -- ----------------------------------------------------------------------------
 -- 9. Phase 1 grants & Supabase Realtime publication wiring
 -- ----------------------------------------------------------------------------
--- Protect new PII tables from anon even during Phase 1 while keeping legacy
--- inventory/history_log accessible for the live vanilla site.
-REVOKE ALL ON public.profiles FROM anon;
-REVOKE ALL ON public.loans FROM anon;
+-- Protect new PII tables from anon and block privilege escalation on profiles
+-- even during Phase 1, while keeping legacy inventory/history_log accessible
+-- for the live vanilla site.
+REVOKE ALL ON public.profiles FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.loans FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.categories, public.locations FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.inventory_public FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT ON public.inventory_public TO anon, authenticated;
 GRANT SELECT ON public.categories, public.locations TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.categories, public.locations, public.loans, public.profiles TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.categories, public.locations TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.loans TO authenticated;
+GRANT SELECT ON public.profiles TO authenticated;
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "profiles_select_self_or_admin" ON public.profiles;
+CREATE POLICY "profiles_select_self_or_admin"
+  ON public.profiles
+  FOR SELECT
+  TO authenticated
+  USING (
+    id = auth.uid()
+    OR public.current_user_role() = 'admin'
+  );
 
 GRANT EXECUTE ON FUNCTION public.current_user_role() TO anon, authenticated;
 REVOKE ALL ON FUNCTION public.member_check_item(text, text, text) FROM PUBLIC, anon;
