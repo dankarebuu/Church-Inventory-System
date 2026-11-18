@@ -76,7 +76,7 @@ body, .topbar, .panel, .stat, .tag, .modal, .sidebar, input, select, textarea {
   transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
 }
 
-/* Use the theme token for the sticky top bar background */
+/* Keep the fixed top bar background in sync with the active theme */
 .topbar {
   background: var(--topbar-bg) !important;
 }
@@ -207,14 +207,17 @@ html, .modal, .history-list {
   margin-bottom: 10px;
 }
 
-/* ---------- sticky top bar ---------- */
+/* ---------- fixed top bar ---------- */
 .topbar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  width: 100%;
   z-index: 40;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.25s ease;
 }
 
 .topbar-inner {
@@ -226,6 +229,7 @@ html, .modal, .history-list {
   align-items: center;
   flex-wrap: wrap;
   gap: 20px;
+  transition: all 0.3s ease;
 }
 
 .brand h1 {
@@ -298,7 +302,7 @@ html, .modal, .history-list {
   width: 100%;
   max-width: 1320px;
   margin: 0 auto;
-  padding: 28px 24px 80px;
+  padding: 170px 24px 80px;
   flex: 1;
   display: grid;
   gap: 24px;
@@ -484,6 +488,12 @@ html, .modal, .history-list {
   margin-top: 2px;
 }
 
+@media (max-width: 768px) {
+  .layout {
+    padding-top: 250px;
+  }
+}
+
 .actions {
   display: flex;
   gap: 8px;
@@ -571,6 +581,16 @@ html, .modal, .history-list {
 .dropdown {
   position: relative;
   display: inline-block;
+}
+
+/* FIX: Invisible hover bridge. Nakakabit sa button wrapper para hindi magsara ang menu habang pababa ang mouse mo! */
+.dropdown::after {
+  content: '';
+  position: absolute;
+  bottom: -15px;
+  left: 0;
+  right: 0;
+  height: 15px;
 }
 
 .dropdown-menu {
@@ -860,16 +880,21 @@ html, .modal, .history-list {
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(4px);
-  display: none;
+  /* FIX: Pinalitan ang display:none ng opacity/visibility para ma-animate! */
+  display: flex;
   align-items: center;
   justify-content: center;
   z-index: 50;
   padding: 20px;
   overflow-y: auto;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
 .overlay.show {
-  display: flex;
+  opacity: 1;
+  visibility: visible;
 }
 
 .modal {
@@ -882,6 +907,16 @@ html, .modal, .history-list {
   max-height: 88vh;
   overflow-y: auto;
   box-shadow: var(--shadow-modal);
+  /* FIX: Initial state ng window bago lumitaw (Naka-zoom out at nasa ibaba) */
+  opacity: 0;
+  transform: translateY(20px) scale(0.95);
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Kapag nag-show ang overlay, aakyat at magzo-zoom in ang popup! */
+.overlay.show .modal {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .modal-wide {
@@ -994,6 +1029,43 @@ html, .modal, .history-list {
   margin-top: 18px;
 }
 
+/* FIX: Alert/Confirm Button Polish */
+#alertOverlay .btn-primary,
+#confirmOverlay .btn-primary,
+#confirmOverlay .btn-ghost {
+  padding: 12px 24px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  font-size: 14px;
+}
+
+/* FIX: Password Wrapper & Toggle Button */
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.password-wrapper input {
+  padding-right: 40px !important;
+  width: 100%;
+}
+.toggle-password {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease;
+}
+.toggle-password:hover {
+  color: var(--white);
+}
+
 /* ---------- history list ---------- */
 .history-list {
   max-height: 400px;
@@ -1072,6 +1144,16 @@ html, .modal, .history-list {
 .history-item.deleted .icon {
   background: #FEF2F2;
   color: #B91C1C;
+}
+
+.history-item.import .icon {
+  background: #F3E8FF;
+  color: #9333EA;
+}
+
+[data-theme="dark"] .history-item.import .icon {
+  background: rgba(147, 51, 234, 0.15);
+  color: #C084FC;
 }
 
 .history-item .content {
@@ -1490,11 +1572,17 @@ html, .modal, .history-list {
   }
 
   .gateway-title {
-    font-size: 36px;
+    font-size: clamp(24px, 10vw, 32px);
   }
 
   .gateway-actions {
     gap: 10px;
+  }
+}
+
+@media (max-width: 360px) {
+  .layout {
+    padding-top: 300px;
   }
 }
 
@@ -1546,10 +1634,12 @@ html, .modal, .history-list {
 
 .gateway-title {
   font-family: 'Outfit';
-  font-size: 48px;
+  font-size: clamp(28px, 8vw, 48px);
   margin: 10px 0 5px;
   color: var(--white);
   text-transform: uppercase;
+  line-height: 1.1;
+  word-break: normal;
 }
 
 .gateway-sub {
@@ -1725,31 +1815,9 @@ html, .modal, .history-list {
    MASTER TYPOGRAPHY OVERRIDES
    ========================================= */
 
-/* 1. Headings & Big Numbers */
-.brand h1, .stat .n, .panel-title, .cat-hdr h2,
-.modal-header h3, .modal h3, .print-header h2,
-.gateway-title, .gallery-title, .avatar {
-  font-family: 'Outfit', system-ui, -apple-system, sans-serif !important;
-}
-
-/* 2. Standard Text & Descriptions */
-body, .brand p, .tag .item-name, .field input,
-.field select, .field textarea, .history-item .item-desc,
-.gallery-desc {
+/* Use the site's main font consistently, including script-generated UI text. */
+body, body * {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
-}
-
-/* 3. Tech Labels, Buttons, & Metadata */
-.tape, .guest-label, .sync-pill, .stat .l,
-.controls input[type=text], .controls select,
-.btn, .dropdown-menu button, .cat-hdr .count,
-.status-btn, .empty, .field label,
-.history-controls input[type=text], .history-controls select,
-.history-item .action-label, .history-item .time,
-.history-item .restore-btn, .history-item .undo-btn,
-.toast, .loading, .gateway-sub, .gallery-noimg,
-.profile-header {
-  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
 }
 
 /* =========================================
@@ -1812,4 +1880,375 @@ body, .brand p, .tag .item-name, .field input,
   border-color: var(--amber);
   background: var(--amber);
   box-shadow: inset 0 0 0 3px var(--panel);
+}
+
+/* =========================================
+   LIST VIEW MODE (TOGGLE)
+   ========================================= */
+.grid.list-view {
+  grid-template-columns: 1fr; /* Isang mahabang column lang */
+  gap: 8px;
+}
+
+.grid.list-view .tag {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 14px 24px; /* Mas manipis na card */
+  cursor: pointer;
+}
+
+/* I-hide ang mahahabang details kapag nasa list view */
+.grid.list-view .tag .row,
+.grid.list-view .tag .remark,
+.grid.list-view .tag .status-buttons,
+.grid.list-view .tag .foot {
+  display: none;
+}
+
+/* Wrapper para hindi maghiwalay ang Name at Brand sa flexbox */
+.tag-header-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.grid.list-view .item-name {
+  margin-bottom: 2px;
+  font-size: 15px;
+}
+
+.grid.list-view .brand {
+  margin-bottom: 0;
+}
+
+/* Status Indicator na pambihira lang lalabas sa List View */
+.list-status-indicator {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.grid.list-view .list-status-indicator {
+  display: flex;
+}
+
+/* =========================================
+   SMART ANIMATIONS & HOVER TWEAKS
+   ========================================= */
+
+/* 1. List View Hover (Horizontal Nudge) */
+.grid.list-view .tag {
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.grid.list-view .tag:hover {
+  transform: translateX(6px); /* Usog pa-kanan nang konti imbes na umangat */
+  background: var(--panel-2);
+  border-color: var(--amber);
+  box-shadow: var(--shadow-card);
+}
+
+/* 2. Grid/List Switch Transition (Staggered Fade-in) */
+@keyframes viewSwitchIn {
+  0% { opacity: 0; transform: translateY(15px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.grid.animate-switch .tag {
+  opacity: 0; /* Simulang nakatago */
+  animation: viewSwitchIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* Sunod-sunod na paglabas (Stagger effect) para sa unang ilang items */
+.grid.animate-switch .tag:nth-child(1) { animation-delay: 0.00s; }
+.grid.animate-switch .tag:nth-child(2) { animation-delay: 0.04s; }
+.grid.animate-switch .tag:nth-child(3) { animation-delay: 0.08s; }
+.grid.animate-switch .tag:nth-child(4) { animation-delay: 0.12s; }
+.grid.animate-switch .tag:nth-child(5) { animation-delay: 0.16s; }
+.grid.animate-switch .tag:nth-child(n+6) { animation-delay: 0.20s; }
+
+/* 3. Modal Inner Card Pop Animation (Kapag kinlick ang list item) */
+@keyframes modalCardPop {
+  0% { opacity: 0; transform: scale(0.92) translateY(15px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+#viewItemBody .tag {
+  animation: modalCardPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* =========================================
+   MODAL VIEW ITEM POLISH
+   ========================================= */
+#viewItemBody .tag {
+  padding: 10px 0 0 0;
+}
+
+#viewItemBody .tag .tag-header-wrapper,
+#viewItemBody .tag .band,
+#viewItemBody .tag::before,
+#viewItemBody .tag .list-status-indicator {
+  display: none !important;
+}
+
+/* =========================================
+   SMART SCROLL HEADER (COMPACT & HIDE)
+   ========================================= */
+
+.topbar.hidden-scroll {
+  transform: translateY(-100%);
+}
+
+.topbar-inner,
+.brand h1,
+.site-logo {
+  transition: all 0.3s ease;
+}
+
+.topbar.compact .topbar-inner {
+  padding: 10px 24px;
+}
+
+.topbar.compact .brand h1 {
+  font-size: 22px;
+}
+
+.topbar.compact .site-logo {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+  border-radius: 8px;
+}
+
+.topbar.compact .brand-text p,
+.topbar.compact .brand-text .tape,
+.topbar.compact #lastUpdated,
+.topbar.compact .guest-label {
+  display: none !important;
+}
+
+/* =========================================
+   CUSTOM FILE UPLOAD ZONE
+   ========================================= */
+.custom-file-upload {
+  border: 2px dashed var(--input-border);
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  margin-top: 4px;
+}
+
+.custom-file-upload:hover,
+.custom-file-upload:focus-visible {
+  background: var(--panel-2);
+  border-color: var(--amber);
+  outline: none;
+}
+
+.custom-file-upload.has-file {
+  background: rgba(16, 185, 129, 0.05);
+  border-color: var(--green);
+  border-style: solid;
+}
+
+.custom-file-upload.has-file span#fileNameDisplay {
+  color: var(--green);
+}
+
+/* =========================================
+   MULTI-IMAGE GALLERY & THUMBNAILS
+   ========================================= */
+.image-thumbnails {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.thumb-box {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.thumb-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumb-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(15, 23, 42, 0.7);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 10px;
+  transition: background 0.2s;
+}
+
+.thumb-remove:hover,
+.thumb-remove:focus-visible {
+  background: var(--red);
+}
+
+.gallery-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(15, 23, 42, 0.6);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: background 0.2s ease;
+}
+
+.gallery-nav:hover,
+.gallery-nav:focus-visible {
+  background: var(--amber);
+}
+
+.gallery-nav.left { left: 10px; }
+.gallery-nav.right { right: 10px; }
+
+.gallery-counter {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.6);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono';
+  display: none;
+  backdrop-filter: blur(4px);
+}
+
+/* =========================================
+   FULLSCREEN ZOOM IMAGE VIEWER
+   ========================================= */
+#galleryImage {
+  cursor: zoom-in;
+  transition: opacity 0.2s;
+}
+
+#galleryImage:hover {
+  opacity: 0.8;
+}
+
+.fullscreen-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 9999;
+  display: none;
+  overflow: auto;
+  backdrop-filter: blur(8px);
+}
+
+.fullscreen-zoom-overlay.show {
+  display: block;
+  animation: fadeInZoom 0.3s ease forwards;
+}
+
+@keyframes fadeInZoom {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.zoom-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+#fullscreenZoomImage {
+  max-width: 100%;
+  max-height: 90vh;
+  object-fit: contain;
+  cursor: grab;
+  border-radius: 8px;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+#fullscreenZoomImage:active {
+  cursor: grabbing;
+}
+
+.zoom-container {
+  overflow: hidden;
+  touch-action: none;
+}
+
+.close-zoom-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10001;
+  transition: background 0.2s;
+}
+
+.close-zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.zoom-tip {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10001;
+  backdrop-filter: blur(4px);
+  transition: opacity 0.3s ease;
 }

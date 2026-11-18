@@ -8,6 +8,33 @@ let currentUser = null;
 let items = [];
 let history = [];
 let editingId = null;
+let pendingImportData = []; // Holds data temporarily for the Import Wizard
+let existingUrls = [];
+let newFiles = [];
+let galleryImageUrls = [];
+let currentGalleryIdx = 0;
+
+function parseImages(imgData) {
+  if (!imgData) return [];
+  if (Array.isArray(imgData)) {
+    return imgData.filter(url => typeof url === 'string' && url.trim()).map(url => url.trim());
+  }
+
+  if (typeof imgData !== 'string') return [];
+  const value = imgData.trim();
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter(url => typeof url === 'string' && url.trim()).map(url => url.trim());
+    }
+    if (typeof parsed === 'string' && parsed.trim()) return [parsed.trim()];
+    return [];
+  } catch {
+    return [value];
+  }
+}
 
 // ========== CUSTOM ALERT & CONFIRM MODALS ==========
 const alertOverlay = document.getElementById('alertOverlay');
@@ -17,7 +44,7 @@ const alertIconContainer = document.getElementById('alertIconContainer');
 
 function customAlert(message, title = 'Notice', type = 'info') {
   alertTitle.textContent = title;
-  alertMessage.innerHTML = message; // Allow limited HTML formatting inside the alert body
+  alertMessage.innerHTML = message; 
   
   let iconHtml = '';
   if (type === 'error') {
@@ -110,18 +137,28 @@ async function checkAuth() {
   });
 }
 
+function getUserEmailPrefix(email) {
+  if (typeof email !== 'string') return 'User';
+  const trimmed = email.trim();
+  if (!trimmed) return 'User';
+  return trimmed.includes('@') ? trimmed.split('@')[0] : trimmed;
+}
+
+function getUserDisplayName(user) {
+  const meta = user?.user_metadata || {};
+  const metaName = [meta.first_name, meta.last_name].filter(Boolean).join(' ').trim()
+    || meta.username
+    || meta.full_name
+    || '';
+
+  if (metaName) return metaName;
+  return getUserEmailPrefix(user?.email);
+}
+
 function getInitials(name) {
   if (!name) return '👤';
-  
-  // Split a full name into words, such as "Dan Caleb" -> ["Dan", "Caleb"]
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  
-  // Use the first letter of the first and last names for a compact avatar, e.g. DC
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  
-  // Fall back to the first letters of a username or email prefix when no full name exists
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   const cleanName = name.replace(/[^a-zA-Z0-9]/g, '');
   if (cleanName.length >= 2) return (cleanName[0] + cleanName[1]).toUpperCase();
   if (cleanName.length === 1) return cleanName[0].toUpperCase();
@@ -135,18 +172,30 @@ function updateAuthUI() {
   const profileDropdown = document.getElementById('profileDropdown');
   const userAvatar = document.getElementById('userAvatar');
   const profileEmail = document.getElementById('profileEmail');
+
+  const historyBtn = document.getElementById('historyBtn');
+  const exportMenu = document.getElementById('exportMenu');
+  const importMenu = document.getElementById('importMenu');
   
   if (currentUser) {
     gateway.classList.add('hidden');
-    addBtn.style.display = 'inline-block';
+    addBtn.style.display = 'inline-flex';
+    if (historyBtn) historyBtn.style.display = 'inline-flex';
+    if (exportMenu) exportMenu.style.display = 'inline-block';
+    if (importMenu) importMenu.style.display = 'inline-block';
+    
     guestViewControls.style.display = 'none';
     profileDropdown.style.display = 'inline-block';
     
-    const displayName = currentUser.user_metadata?.username || currentUser.email.split('@')[0];
+    const displayName = getUserDisplayName(currentUser);
     userAvatar.textContent = getInitials(displayName);
     profileEmail.textContent = displayName;
   } else {
     addBtn.style.display = 'none';
+    if (historyBtn) historyBtn.style.display = 'none';
+    if (exportMenu) exportMenu.style.display = 'none';
+    if (importMenu) importMenu.style.display = 'none';
+
     guestViewControls.style.display = 'flex';
     profileDropdown.style.display = 'none';
   }
@@ -188,7 +237,6 @@ document.getElementById('toggleAuthModeBtn').addEventListener('click', (e) => {
   document.getElementById('submitAuthBtn').textContent = isSignUpMode ? 'Sign Up' : 'Login';
   e.target.textContent = isSignUpMode ? 'Already have an account? Login' : 'Need an account? Sign up';
   
-  // Show or hide the name fields when switching between login and sign-up modes
   const usernameFields = document.getElementById('usernameFields');
   usernameFields.style.display = isSignUpMode ? 'block' : 'none';
   document.getElementById('auth_first_name').required = isSignUpMode;
@@ -248,7 +296,6 @@ authForm.addEventListener('submit', async (e) => {
   document.getElementById('submitAuthBtn').textContent = isSignUpMode ? 'Sign Up' : 'Login';
 });
 
-// Password recovery flow for reset requests and account re-entry
 const forgotOverlay = document.getElementById('forgotOverlay');
 const updatePassOverlay = document.getElementById('updatePassOverlay');
 
@@ -346,12 +393,30 @@ accountForm.addEventListener('submit', async (e) => {
   }
 });
 
+// ========== SHOW/HIDE PASSWORD TOGGLE ==========
+function bindPasswordToggles() {
+  document.querySelectorAll('.toggle-password').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const input = e.currentTarget.previousElementSibling;
+      const icon = e.currentTarget.querySelector('i');
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.setAttribute('data-lucide', 'eye-off');
+      } else {
+        input.type = 'password';
+        icon.setAttribute('data-lucide', 'eye');
+      }
+      if (window.lucide) lucide.createIcons();
+    });
+  });
+}
+document.addEventListener('DOMContentLoaded', bindPasswordToggles);
+
 // ========== SEED DATA & CATEGORY COLORS ==========
 const CATEGORY_COLORS = {
-  "Bass": "#e8a33d", "Electric Guitar (SELDER)": "#d3554a", "Acoustic (Guitar 2)": "#5fa777",
-  "Classical Guitar": "#4e7fb0", "String Instrument": "#9575b0", "Piano/Keyboard": "#4fa8a0",
-  "Drums": "#d97740", "Piano 1st (Roland E-09)": "#3f8f8a", "Piano 2nd (Roland Juno Stage)": "#6ab0aa",
-  "Others": "#8b92a0", "Electric Guitar Effects": "#c0517a"
+  "Drums": "#d97740", "Bass Rig": "#e8a33d", "Electric Guitar Rig": "#d3554a",
+  "Acoustic & Classical": "#5fa777", "Keyboard": "#4fa8a0", "In-Ear Monitors": "#9575b0",
+  "Spares & Shared": "#4e7fb0", "Unassigned - Needs Review": "#8b92a0", "Others": "#8b92a0"
 };
 
 function colorFor(cat) { return CATEGORY_COLORS[cat] || "#7a8290"; }
@@ -373,7 +438,7 @@ async function loadData() {
     });
   }
 
-  const { data: histData } = await supabaseClient.from('history_log').select('*').order('timestamp', { ascending: false });
+  const { data: histData } = await supabaseClient.from('history_log').select('*').order('timestamp', { ascending: false }).limit(200);
   history = histData || [];
 
   lastUpdatedEl.textContent = 'Live • Synced ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -400,14 +465,17 @@ async function logAction(action, itemData, prevData = null) {
     user_email: currentUser.email,
     undone: false
   };
-  await supabaseClient.from('history_log').insert([entry]);
+  
+  const { error } = await supabaseClient.from('history_log').insert([entry]);
+  if(error) {
+     customAlert(error.message, "Logging Issue", "error");
+  }
 }
 
 function isOnLoan(item) {
   if (item.borrower && item.borrower.trim() !== '') return true;
-  const loanKeywords = ['lent', 'borrowed', 'loan', 'on loan', 'borrow'];
   const text = ((item.remarks || '') + ' ' + (item.owner || '')).toLowerCase();
-  return loanKeywords.some(kw => text.includes(kw));
+  return /\b(lent|borrow\w*|loan\w*)\b/i.test(text);
 }
 
 // ========== UI UTILITIES & RENDERING ==========
@@ -445,11 +513,8 @@ function renderStats() {
   const currentLoan = document.getElementById('filterLoan').value;
 
   const stats = [
-    // Keep summary tiles neutral by default unless a filter is active
     { type: 'all', n: items.length, l: 'Logged items', cls: '' },
     { type: 'all', n: items.reduce((a, i) => a + (Number(i.qty) || 0), 0), l: 'Total units', cls: '' },
-    
-    // Preserve the highlighted state for quick-filter summary cards when they are selected
     { type: 'working', n: items.filter(i => i.condition === 'working').length, l: 'Working', cls: `ok ${currentStatus === 'working' ? 'active' : ''}` },
     { type: 'flagged', n: items.filter(i => i.condition !== 'working').length, l: 'Flagged', cls: `${items.filter(i => i.condition !== 'working').length > 0 ? 'bad' : ''} ${(currentStatus === 'flagged' || currentStatus === 'repair' || currentStatus === 'missing') ? 'active' : ''}` },
     { type: 'loan', n: items.filter(isOnLoan).length, l: 'On loan', cls: currentLoan === 'loaned' ? 'active' : '' },
@@ -463,7 +528,6 @@ function renderStats() {
   `).join('');
 }
 
-// Quick-summary filter handlers for status and loan shortcuts
 document.getElementById('stats').addEventListener('click', (e) => {
   const card = e.target.closest('.stat');
   if (!card) return;
@@ -473,7 +537,6 @@ document.getElementById('stats').addEventListener('click', (e) => {
   const filterLoan = document.getElementById('filterLoan');
 
   if (type === 'all') {
-    // Clear active filters and show the complete inventory list again
     filterStatus.value = '';
     filterLoan.value = '';
   } else if (type === 'working') {
@@ -487,7 +550,7 @@ document.getElementById('stats').addEventListener('click', (e) => {
     filterStatus.value = '';
   }
 
-  render(); // Re-render the inventory list after the quick filter changes
+  render(); 
 });
 
 function getFiltered() {
@@ -544,9 +607,18 @@ function renderGearCard(item) {
   return `
     <div class="tag" data-id="${item.id}">
       <div class="band" style="background:${colorFor(item.category)}"></div>
-      <div class="item-name">${esc(item.item)} ${Number(item.qty) > 1 ? `<span style="color: var(--muted);">×${esc(item.qty)}</span>` : ''}</div>
-      <div class="brand">${item.brand && item.brand !== 'N/A' ? esc(item.brand) : 'No brand listed'}</div>
-      ${item.serial ? `<div class="row"><span>Serial/ID</span><b style="font-family: monospace; color: var(--muted);">${esc(item.serial)}</b></div>` : ''}
+      
+      <div class="tag-header-wrapper">
+        <div class="item-name">${esc(item.item)} ${Number(item.qty) > 1 ? `<span style="color: var(--muted);">×${esc(item.qty)}</span>` : ''}</div>
+        <div class="brand">${item.brand && item.brand !== 'N/A' ? esc(item.brand) : 'No brand listed'}</div>
+      </div>
+
+      <div class="list-status-indicator">
+        ${statusBadge(item.condition)}
+        <i data-lucide="chevron-right" style="width: 16px; height: 16px; color: var(--muted-2);"></i>
+      </div>
+
+      ${item.serial ? `<div class="row"><span>Serial/ID</span><b style="font-family: 'Plus Jakarta Sans', sans-serif; color: var(--muted);">${esc(item.serial)}</b></div>` : ''}
       <div class="row"><span>Status</span>${statusBadge(item.condition)}</div>
       ${onLoan ? `<div class="row"><span>Loan status</span>${loanBadge}</div>` : ''}
       <div class="row"><span>Owner</span><b>${esc(item.owner)}</b></div>
@@ -554,6 +626,7 @@ function renderGearCard(item) {
       ${item.borrower ? `<div class="row"><span>Borrower</span><b style="color: var(--blue);">${esc(item.borrower)}</b></div>` : ''}
       ${item.returnDate ? `<div class="row"><span>Return Date</span><b style="color: var(--red);">${esc(item.returnDate)}</b></div>` : ''}
       ${item.remarks ? `<div class="remark">${esc(item.remarks)}</div>` : ''}
+      
       ${authControls}
     </div>
   `;
@@ -588,6 +661,8 @@ function render() {
     `;
   }).join('');
 
+  applyViewMode(currentViewMode); 
+
   setTimeout(() => { 
     if (window.lucide) { lucide.createIcons(); }
   }, 10);
@@ -596,12 +671,132 @@ function render() {
 // ========== MODAL: ADD/EDIT ==========
 const overlay = document.getElementById('overlay');
 const form = document.getElementById('itemForm');
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('f_image_file');
+const fileNameDisplay = document.getElementById('fileNameDisplay');
+const uploadStatus = document.getElementById('uploadStatus');
+
+function setUploadZoneIcon(iconName, color) {
+  const iconContainer = uploadZone?.querySelector('.upload-zone-icon');
+  if (!iconContainer) return;
+
+  iconContainer.innerHTML = `<i data-lucide="${iconName}" style="width: 24px; height: 24px; color: ${color}; margin-bottom: 8px;"></i>`;
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderThumbnails() {
+  const container = document.getElementById('imageThumbnails');
+  if (!container) return;
+
+  container.querySelectorAll('img[data-preview-url]').forEach(img => {
+    URL.revokeObjectURL(img.dataset.previewUrl);
+  });
+  container.replaceChildren();
+
+  const total = existingUrls.length + newFiles.length;
+  if (fileNameDisplay) {
+    fileNameDisplay.textContent = total > 0 ? `${total} / 4 images selected` : 'Click to browse images';
+  }
+  uploadZone?.classList.toggle('has-file', total > 0);
+  setUploadZoneIcon(total > 0 ? 'check-circle' : 'images', total > 0 ? 'var(--green)' : 'var(--muted)');
+
+  const appendThumbnail = (src, source, index, isPreview = false) => {
+    const box = document.createElement('div');
+    box.className = 'thumb-box';
+
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = `Gear photo ${index + 1}`;
+    if (isPreview) img.dataset.previewUrl = src;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'thumb-remove';
+    removeBtn.dataset.source = source;
+    removeBtn.dataset.index = String(index);
+    removeBtn.setAttribute('aria-label', `Remove gear photo ${index + 1}`);
+    removeBtn.innerHTML = '<i data-lucide="x" style="width: 14px; height: 14px;"></i>';
+
+    box.append(img, removeBtn);
+    container.appendChild(box);
+  };
+
+  existingUrls.forEach((url, index) => appendThumbnail(url, 'existing', index));
+  newFiles.forEach((file, index) => {
+    appendThumbnail(URL.createObjectURL(file), 'new', index, true);
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function resetUploadZone() {
+  const hiddenImageInput = document.getElementById('f_image');
+  if (fileInput) fileInput.value = '';
+  existingUrls = [];
+  newFiles = [];
+  if (hiddenImageInput) hiddenImageInput.value = '';
+  if (uploadStatus) {
+    uploadStatus.style.display = 'none';
+    uploadStatus.textContent = '';
+  }
+  renderThumbnails();
+}
+
+if (uploadZone && fileInput) {
+  uploadZone.addEventListener('click', e => {
+    if (e.target !== fileInput) fileInput.click();
+  });
+
+  uploadZone.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput.click();
+    }
+  });
+
+  document.getElementById('imageThumbnails')?.addEventListener('click', e => {
+    const removeBtn = e.target.closest('.thumb-remove');
+    if (!removeBtn) return;
+
+    const index = Number(removeBtn.dataset.index);
+    if (removeBtn.dataset.source === 'existing') existingUrls.splice(index, 1);
+    else if (removeBtn.dataset.source === 'new') newFiles.splice(index, 1);
+    renderThumbnails();
+  });
+
+  fileInput.addEventListener('change', () => {
+    const files = Array.from(fileInput.files || []);
+    let limitReached = false;
+    for (const file of files) {
+      if (existingUrls.length + newFiles.length >= 4) {
+        limitReached = true;
+        break;
+      }
+      if (!file.type.startsWith('image/')) {
+        customAlert(`File ${file.name} is not an image.`, 'Invalid File', 'error');
+        continue;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        customAlert(`File ${file.name} is larger than 5MB.`, 'Too Large', 'error');
+        continue;
+      }
+      newFiles.push(file);
+    }
+
+    fileInput.value = '';
+    renderThumbnails();
+    if (limitReached) {
+      customAlert('You can only upload up to 4 images per item.', 'Limit Reached', 'info');
+    }
+  });
+}
 
 function openModal(item) {
   if (!currentUser) {
     customAlert("You must be logged in to edit items.", "Access Denied", "error");
     return;
   }
+  resetUploadZone();
   editingId = item ? item.id : null;
   document.getElementById('modalTitle').textContent = item ? 'Edit item' : 'Add item';
   document.getElementById('f_category').value = item?.category || '';
@@ -611,18 +806,25 @@ function openModal(item) {
   document.getElementById('f_condition').value = item?.condition || 'working';
   document.getElementById('f_owner').value = item?.owner || 'Church Property';
   document.getElementById('f_location').value = item?.location || 'Stage';
-  document.getElementById('f_checkedBy').value = item?.checkedBy || currentUser.email.split('@')[0];
+  document.getElementById('f_checkedBy').value = item?.checkedBy || getUserEmailPrefix(currentUser?.email);
   document.getElementById('f_date').value = item?.dateChecked || new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   document.getElementById('f_remarks').value = item?.remarks || '';
   document.getElementById('f_borrower').value = item?.borrower || '';
   document.getElementById('f_returnDate').value = item?.returnDate || '';
   document.getElementById('f_serial').value = item?.serial || '';
   document.getElementById('f_description').value = item?.description || '';
-  document.getElementById('f_image').value = item?.image_filename || '';
+  existingUrls = parseImages(item?.image_filename);
+  newFiles = [];
+  renderThumbnails();
   overlay.classList.add('show');
 }
 
-function closeModal() { overlay.classList.remove('show'); editingId = null; form.reset(); }
+function closeModal() {
+  overlay.classList.remove('show');
+  editingId = null;
+  form.reset();
+  resetUploadZone();
+}
 document.getElementById('addBtn').onclick = () => openModal(null);
 document.getElementById('cancelBtn').onclick = closeModal;
 overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
@@ -631,40 +833,41 @@ form.addEventListener('submit', async e => {
   e.preventDefault();
   if (!currentUser) return;
 
-  const fileInput = document.getElementById('f_image_file');
-  const uploadStatus = document.getElementById('uploadStatus');
-  let imageUrl = document.getElementById('f_image').value.trim();
+  const uploadCount = newFiles.length;
+  let uploadedCount = 0;
 
-  // Upload a selected photo to cloud storage before saving the inventory record
-  if (fileInput.files.length > 0) {
-    const file = fileInput.files[0];
+  while (newFiles.length > 0) {
+    const file = newFiles[0];
     const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-    const filePath = `${fileName}`;
+    const filePath = `${Date.now()}_${uploadedCount}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
 
     uploadStatus.style.display = 'block';
-    uploadStatus.textContent = 'Uploading image to cloud storage...';
+    uploadStatus.textContent = `Uploading image ${uploadedCount + 1} of ${uploadCount}...`;
 
-    // Store the image in the gear-photos storage bucket
-    const { data: uploadData, error: uploadError } = await supabaseClient
+    const { error: uploadError } = await supabaseClient
       .storage
       .from('gear-photos')
       .upload(filePath, file);
 
     if (uploadError) {
-      customAlert('Image upload failed: ' + uploadError.message, 'Upload Error', 'error');
       uploadStatus.style.display = 'none';
+      renderThumbnails();
+      customAlert(`Failed to upload ${file.name}: ${uploadError.message}`, 'Upload Error', 'error');
       return;
     }
 
-    // Retrieve the public URL so the image can be displayed in the gallery
     const { data: urlData } = supabaseClient
       .storage
       .from('gear-photos')
       .getPublicUrl(filePath);
 
-    imageUrl = urlData.publicUrl;
+    existingUrls.push(urlData.publicUrl);
+    newFiles.shift();
+    uploadedCount++;
   }
+  uploadStatus.style.display = 'none';
+  renderThumbnails();
+  const savedImageString = existingUrls.length > 0 ? JSON.stringify(existingUrls) : '';
 
   const data = {
     category: document.getElementById('f_category').value.trim() || 'Others',
@@ -681,16 +884,22 @@ form.addEventListener('submit', async e => {
     returnDate: document.getElementById('f_returnDate').value,
     serial: document.getElementById('f_serial').value.trim(),
     description: document.getElementById('f_description').value.trim(),
-    image_filename: imageUrl // Save the public image URL to the inventory item record
+    image_filename: savedImageString
   };
 
   if (editingId) {
     const prevItem = items.find(i => i.id === editingId);
-    await supabaseClient.from('inventory').update(data).eq('id', editingId);
+    
+    const { error: err } = await supabaseClient.from('inventory').update(data).eq('id', editingId);
+    if(err){ customAlert(err.message, "Save Failed", "error"); return; }
+    
     await logAction('updated', { id: editingId, ...data }, prevItem);
   } else {
     const newItem = { id: 'item_' + Date.now(), ...data };
-    await supabaseClient.from('inventory').insert([newItem]);
+    
+    const { error: err } = await supabaseClient.from('inventory').insert([newItem]);
+    if(err){ customAlert(err.message, "Save Failed", "error"); return; }
+    
     await logAction('added', newItem);
   }
   
@@ -702,7 +911,7 @@ form.addEventListener('submit', async e => {
 
 
 // ========== CARD ACTIONS ==========
-document.getElementById('content').addEventListener('click', async e => {
+document.addEventListener('click', async e => {
   const hdr = e.target.closest('.cat-hdr');
   if (hdr) {
     const grid = hdr.nextElementSibling;
@@ -712,25 +921,56 @@ document.getElementById('content').addEventListener('click', async e => {
     return;
   }
 
-  const btn = e.target.closest('button[data-act]');
-  if (btn && btn.dataset.act === 'view') {
-    const id = e.target.closest('.tag').dataset.id;
+  const card = e.target.closest('.tag');
+  if (!card) return;
+
+  const isInsideModal = e.target.closest('#viewItemBody');
+
+  if (currentViewMode === 'list' && !e.target.closest('button') && !isInsideModal) {
+    const id = card.dataset.id;
     const item = items.find(i => i.id === id);
     
+    const brandText = item.brand && item.brand !== 'N/A' ? esc(item.brand) : 'No brand listed';
+    document.getElementById('viewItemTitle').innerHTML = `
+      <div style="line-height: 1.2;">
+        ${esc(item.item)}
+        <div style="font-size: 13px; color: var(--muted); text-transform: none; font-weight: 500; font-family: 'Plus Jakarta Sans', sans-serif; margin-top: 4px; letter-spacing: 0;">
+          ${brandText}
+        </div>
+      </div>
+    `;
+    
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = renderGearCard(item);
+    const innerCard = tempDiv.firstElementChild;
+    
+    innerCard.style.boxShadow = 'none';
+    innerCard.style.border = 'none';
+    innerCard.style.background = 'transparent';
+    
+    const body = document.getElementById('viewItemBody');
+    body.innerHTML = '';
+    body.appendChild(innerCard);
+    
+    document.getElementById('viewItemOverlay').classList.add('show');
+    setTimeout(() => { if (window.lucide) lucide.createIcons(); }, 10);
+    return; 
+  }
+
+  const btn = e.target.closest('button[data-act]');
+  if (btn && btn.dataset.act === 'view') {
+    const id = card.dataset.id;
+    const item = items.find(i => i.id === id);
+    
+    if (isInsideModal) {
+      document.getElementById('viewItemOverlay').classList.remove('show');
+    }
+
     document.getElementById('galleryTitle').textContent = item.item;
     document.getElementById('galleryDesc').textContent = item.description || 'No description provided yet.';
-    
-    const img = document.getElementById('galleryImage');
-    const noImg = document.getElementById('galleryNoImage');
-    
-    if (item.image_filename) {
-      img.src = item.image_filename; 
-      img.style.display = 'block';
-      noImg.style.display = 'none';
-    } else {
-      img.style.display = 'none';
-      noImg.style.display = 'block';
-    }
+    galleryImageUrls = parseImages(item.image_filename);
+    currentGalleryIdx = 0;
+    updateGalleryCarousel();
     document.getElementById('galleryOverlay').classList.add('show');
     return;
   }
@@ -739,28 +979,37 @@ document.getElementById('content').addEventListener('click', async e => {
 
   const statusBtn = e.target.closest('.status-btn');
   if (statusBtn) {
-    const card = e.target.closest('.tag');
     const id = card.dataset.id;
     const newStatus = statusBtn.dataset.status;
     const prevItem = items.find(i => i.id === id);
     
     if (prevItem.condition !== newStatus) {
-      await supabaseClient.from('inventory').update({ condition: newStatus }).eq('id', id);
+      const { error: updErr } = await supabaseClient.from('inventory').update({ condition: newStatus }).eq('id', id);
+      if(updErr) { customAlert(updErr.message, "Update Failed", "error"); return; }
+      
       await logAction('updated', { ...prevItem, condition: newStatus }, prevItem);
       await loadData();
+      
+      if (isInsideModal) document.getElementById('viewItemOverlay').classList.remove('show');
     }
     return;
   }
 
   if (!btn) return;
-  const id = e.target.closest('.tag').dataset.id;
+  const id = card.dataset.id;
   const item = items.find(i => i.id === id);
 
-  if (btn.dataset.act === 'edit') openModal(item);
+  if (btn.dataset.act === 'edit') {
+    if (isInsideModal) document.getElementById('viewItemOverlay').classList.remove('show');
+    openModal(item);
+  }
   else if (btn.dataset.act === 'del') {
+    if (isInsideModal) document.getElementById('viewItemOverlay').classList.remove('show');
     openConfirmModal(`Move "${item.item}" to trash?`, async () => {
       const now = new Date().toISOString();
-      await supabaseClient.from('inventory').update({ deleted_at: now }).eq('id', id);
+      const { error: delErr } = await supabaseClient.from('inventory').update({ deleted_at: now }).eq('id', id);
+      if(delErr) { customAlert(delErr.message, "Delete Failed", "error"); return; }
+      
       await logAction('deleted', item);
       await loadData();
       flashToast('Item moved to trash');
@@ -783,10 +1032,10 @@ function generateChangeText(prev, curr) {
   if (!prev) return 'Item added to database';
   
   const changes = [];
-  if (prev.condition !== curr.condition) changes.push(`Status changed to ${curr.condition.toUpperCase()}`);
-  if (prev.qty !== curr.qty) changes.push(`Qty changed from ${prev.qty} to ${curr.qty}`);
-  if (prev.location !== curr.location) changes.push(`Moved to ${curr.location}`);
-  if (prev.owner !== curr.owner) changes.push(`Owner changed to ${curr.owner}`);
+  if (prev.condition !== curr.condition) changes.push(`Status changed to ${esc(curr.condition).toUpperCase()}`);
+  if (prev.qty !== curr.qty) changes.push(`Qty changed from ${esc(prev.qty)} to ${esc(curr.qty)}`);
+  if (prev.location !== curr.location) changes.push(`Moved to ${esc(curr.location)}`);
+  if (prev.owner !== curr.owner) changes.push(`Owner changed to ${esc(curr.owner)}`);
   if (prev.borrower !== curr.borrower) changes.push(`Borrower updated`);
   if (prev.remarks !== curr.remarks) changes.push(`Remarks updated`);
   
@@ -815,19 +1064,38 @@ function renderHistory() {
   } else {
     historyContent.innerHTML = filteredHistory.map(entry => {
       const userEmail = entry.user_email || 'unknown';
-      const userName = userEmail.split('@')[0];
+      const userName = esc(getUserEmailPrefix(userEmail));
+      const safeEmail = esc(userEmail);
       
-      const changeText = entry.action === 'updated' 
-        ? generateChangeText(entry.prev_data, entry.item_data) 
-        : (entry.action === 'deleted' ? 'Removed from inventory' : 'Added to inventory');
+      let changeText = '';
+      let actionIcon = '';
+      let itemNameDisplay = '';
+
+      if (entry.action === 'import') {
+        const insCount = entry.item_data.insertedIds ? entry.item_data.insertedIds.length : 0;
+        const updCount = entry.item_data.updatedItems ? entry.item_data.updatedItems.length : 0;
+        changeText = `Added ${insCount} items, updated ${updCount} items.`;
+        actionIcon = '<i data-lucide="upload-cloud" style="width: 18px; height: 18px;"></i>';
+        itemNameDisplay = 'Batch Import';
+      } else {
+        changeText = entry.action === 'updated' 
+          ? generateChangeText(entry.prev_data, entry.item_data) 
+          : (entry.action === 'deleted' ? 'Removed from inventory' : 'Added to inventory');
+        actionIcon = entry.action === 'added' ? '<i data-lucide="plus" style="width: 18px; height: 18px;"></i>' : 
+                     entry.action === 'updated' ? '<i data-lucide="edit-2" style="width: 18px; height: 18px;"></i>' : 
+                     '<i data-lucide="trash-2" style="width: 18px; height: 18px;"></i>';
+        itemNameDisplay = esc(entry.item_data.item);
+      }
 
       const isUndone = entry.undone;
       const opacity = isUndone ? '0.5' : '1';
       const textDecoration = isUndone ? 'line-through' : 'none';
 
-      const actionIcon = entry.action === 'added' ? '<i data-lucide="plus" style="width: 18px; height: 18px;"></i>' : 
-                         entry.action === 'updated' ? '<i data-lucide="edit-2" style="width: 18px; height: 18px;"></i>' : 
-                         '<i data-lucide="trash-2" style="width: 18px; height: 18px;"></i>';
+      const canUndo = currentUser && !isUndone && (
+        (entry.action === 'updated' && entry.prev_data) ||
+        (entry.action === 'import')
+      );
+      const canRestore = currentUser && !isUndone && entry.action === 'deleted';
 
       return `
       <div class="history-item ${entry.action}" style="opacity: ${opacity};">
@@ -837,28 +1105,30 @@ function renderHistory() {
             <span style="text-decoration: ${textDecoration};">${entry.action.toUpperCase()}</span>
             <div style="text-align: right;">
                <div style="color: var(--amber); font-weight: 600; text-transform:none;">${userName}</div>
-               <div style="color: var(--muted-2); font-size: 9px; text-transform:none;">${userEmail}</div>
+               <div style="color: var(--muted-2); font-size: 9px; text-transform:none;">${safeEmail}</div>
             </div>
           </div>
-          <div class="item-desc" style="text-decoration: ${textDecoration};">${esc(entry.item_data.item)}</div>
+          <div class="item-desc" style="text-decoration: ${textDecoration};">${itemNameDisplay}</div>
           <div style="font-size: 11px; color: var(--muted); margin-bottom: 4px; font-style: italic; text-decoration: ${textDecoration};">
             ↳ ${changeText}
           </div>
           <div class="time">${formatDate(entry.timestamp)} ${isUndone ? '<span style="color: var(--red); font-weight: bold; margin-left: 8px;">(UNDONE)</span>' : ''}</div>
         </div>
-        ${currentUser && !isUndone && entry.action === 'deleted' ? `<button class="restore-btn" data-entry-id="${entry.id}">Restore</button>` : ''}
-        ${currentUser && !isUndone && entry.action === 'updated' && entry.prev_data ? `<button class="undo-btn" data-entry-id="${entry.id}">Undo</button>` : ''}
+        ${canRestore ? `<button class="restore-btn" data-entry-id="${entry.id}">Restore</button>` : ''}
+        ${canUndo ? `<button class="undo-btn" data-entry-id="${entry.id}">Undo</button>` : ''}
       </div>
     `}).join('');
 
-    // Restore deleted items and update the log entry state
     historyContent.querySelectorAll('.restore-btn').forEach(btn => {
       btn.addEventListener('click', async e => {
         const entry = history.find(h => h.id === e.target.dataset.entryId);
         if (entry) {
-          // Reactivate the item by clearing the soft-delete flag
-          await supabaseClient.from('inventory').update({ deleted_at: null }).eq('id', entry.item_data.id);
-          await supabaseClient.from('history_log').update({ undone: true }).eq('id', entry.id);
+          const { error: updErr1 } = await supabaseClient.from('inventory').update({ deleted_at: null }).eq('id', entry.item_data.id);
+          if (updErr1) { customAlert(updErr1.message, "Restore Failed", "error"); return; }
+          
+          const { error: updErr2 } = await supabaseClient.from('history_log').update({ undone: true }).eq('id', entry.id);
+          if (updErr2) { customAlert(updErr2.message, "Log Issue", "error"); return; }
+          
           await logAction('added', entry.item_data);
           await loadData();
           renderHistory();
@@ -871,20 +1141,46 @@ function renderHistory() {
       btn.addEventListener('click', async e => {
         const entry = history.find(h => h.id === e.target.dataset.entryId);
         if (entry) {
-          const currentItem = items.find(i => i.id === entry.item_data.id);
-          await supabaseClient.from('inventory').update(entry.prev_data).eq('id', entry.item_data.id);
-          await supabaseClient.from('history_log').update({ undone: true }).eq('id', entry.id); 
-          await logAction('updated', entry.prev_data, currentItem);
-          await loadData();
-          renderHistory();
-          flashToast('Changes undone!');
+          if (entry.action === 'import') {
+            const { insertedIds, updatedItems } = entry.item_data;
+            
+            if (insertedIds && insertedIds.length > 0) {
+              const now = new Date().toISOString();
+              const { error: delErr } = await supabaseClient.from('inventory').update({ deleted_at: now }).in('id', insertedIds);
+              if (delErr) { customAlert(delErr.message, "Undo Failed", "error"); return; }
+            }
+            
+            if (updatedItems && updatedItems.length > 0) {
+              for (const u of updatedItems) {
+                const { error: updErr } = await supabaseClient.from('inventory').update(u.prev_data).eq('id', u.id);
+                if (updErr) { customAlert(updErr.message, "Undo Failed", "error"); return; }
+              }
+            }
+            
+            await supabaseClient.from('history_log').update({ undone: true }).eq('id', entry.id);
+            await loadData();
+            renderHistory();
+            flashToast('Import undone!');
+          } else {
+            const currentItem = items.find(i => i.id === entry.item_data.id);
+            
+            const { error: updErr1 } = await supabaseClient.from('inventory').update(entry.prev_data).eq('id', entry.item_data.id);
+            if (updErr1) { customAlert(updErr1.message, "Undo Failed", "error"); return; }
+            
+            const { error: updErr2 } = await supabaseClient.from('history_log').update({ undone: true }).eq('id', entry.id); 
+            if (updErr2) { customAlert(updErr2.message, "Log Issue", "error"); return; }
+            
+            await logAction('updated', entry.prev_data, currentItem);
+            await loadData();
+            renderHistory();
+            flashToast('Changes undone!');
+          }
         }
       });
     });
   }
   historyOverlay.classList.add('show');
   
-  // Re-render the Lucide icons after injecting the updated history rows
   setTimeout(() => { if (window.lucide) lucide.createIcons(); }, 10);
 }
 
@@ -995,7 +1291,7 @@ function exportToCSV() {
     .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
     .join('\n');
 
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -1015,7 +1311,7 @@ document.getElementById('exportPDF').addEventListener('click', () => {
   pdfContainer.style.padding = '30px';
   pdfContainer.style.background = 'white';
   pdfContainer.style.color = 'black';
-  pdfContainer.style.fontFamily = 'sans-serif';
+  pdfContainer.style.fontFamily = "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif";
   
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   
@@ -1086,7 +1382,7 @@ document.getElementById('exportPDF').addEventListener('click', () => {
   }).from(pdfContainer).save();
 });
 
-// Import inventory data from a previously exported JSON file
+// ========== ADVANCED IMPORT WIZARD ==========
 document.getElementById('importJSONBtn').addEventListener('click', () => {
   if (!currentUser) {
     customAlert("You must be logged in to import data.", "Access Denied", "error");
@@ -1106,15 +1402,8 @@ document.getElementById('importFileInput').addEventListener('change', async (e) 
       if (!parsedData.items || !Array.isArray(parsedData.items)) {
         throw new Error('Invalid file format: Missing items array.');
       }
-
-      openConfirmModal(`Import ${parsedData.items.length} items to your cloud database?`, async () => {
-        for (const item of parsedData.items) {
-          await supabaseClient.from('inventory').upsert([item]);
-        }
-        await loadData();
-        flashToast('Data imported successfully to database!');
-      }, "Import Data", false);
-
+      pendingImportData = parsedData.items;
+      document.getElementById('importWizardOverlay').classList.add('show');
     } catch (error) {
       customAlert('Error importing JSON file: ' + error.message, "Import Error", "error");
     }
@@ -1123,7 +1412,6 @@ document.getElementById('importFileInput').addEventListener('change', async (e) 
   reader.readAsText(file);
 });
 
-// CSV parser used to import inventory records from spreadsheet exports
 function parseCSV(text) {
   const lines = [];
   let row = [];
@@ -1171,7 +1459,6 @@ document.getElementById('importCSVFileInput').addEventListener('change', async (
       const rows = parseCSV(event.target.result);
       if (rows.length < 2) throw new Error('CSV file is empty or missing headers.');
 
-      // Ensure the CSV contains the minimum columns needed for inventory import
       const headers = rows[0].map(h => h.toLowerCase());
       const hasItemHeader = headers.some(h => h.includes('item') || h.includes('equipment'));
       
@@ -1185,7 +1472,6 @@ document.getElementById('importCSVFileInput').addEventListener('change', async (
       dataRows.forEach((r, idx) => {
         if (!r[1]) return;
         newItems.push({
-          id: 'item_csv_' + Date.now() + '_' + idx,
           category: r[0] || 'Others',
           item: r[1],
           brand: r[2] || 'N/A',
@@ -1203,9 +1489,8 @@ document.getElementById('importCSVFileInput').addEventListener('change', async (
       });
 
       if (newItems.length > 0) {
-        await supabaseClient.from('inventory').insert(newItems);
-        await loadData();
-        flashToast(`Imported ${newItems.length} items from CSV!`);
+        pendingImportData = newItems;
+        document.getElementById('importWizardOverlay').classList.add('show');
       }
     } catch (error) {
       customAlert('Error reading CSV file: ' + error.message, "Import Error", "error");
@@ -1213,6 +1498,82 @@ document.getElementById('importCSVFileInput').addEventListener('change', async (
     e.target.value = '';
   };
   reader.readAsText(file);
+});
+
+document.getElementById('cancelImportBtn').addEventListener('click', () => {
+  document.getElementById('importWizardOverlay').classList.remove('show');
+  pendingImportData = [];
+});
+
+document.getElementById('confirmImportBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('confirmImportBtn');
+  btn.textContent = 'Importing...';
+  btn.disabled = true;
+
+  try {
+    const mode = document.querySelector('input[name="importMode"]:checked').value;
+    const insertedItems = [];
+    const updatedItems = [];
+
+    for (const row of pendingImportData) {
+      const newId = 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+
+      if (mode === 'duplicate') {
+        row.id = newId;
+        insertedItems.push(row);
+      } else {
+        const match = items.find(i =>
+          (row.serial && i.serial === row.serial) ||
+          (!row.serial && i.item.toLowerCase() === row.item.toLowerCase())
+        );
+
+        if (match) {
+          if (mode === 'update') {
+            row.id = match.id; 
+            updatedItems.push({ newData: row, prevData: match });
+          }
+        } else {
+          row.id = newId;
+          insertedItems.push(row);
+        }
+      }
+    }
+
+    if (insertedItems.length > 0) {
+      const { error } = await supabaseClient.from('inventory').insert(insertedItems);
+      if (error) throw error;
+    }
+
+    for (const u of updatedItems) {
+      const { error } = await supabaseClient.from('inventory').update(u.newData).eq('id', u.newData.id);
+      if (error) throw error;
+    }
+
+    if (insertedItems.length > 0 || updatedItems.length > 0) {
+      const historyEntry = {
+        id: 'h_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+        action: 'import',
+        item_id: 'batch_import',
+        item_data: {
+          insertedIds: insertedItems.map(i => i.id),
+          updatedItems: updatedItems.map(u => ({ id: u.newData.id, prev_data: u.prevData }))
+        },
+        user_email: currentUser.email,
+        undone: false
+      };
+      await supabaseClient.from('history_log').insert([historyEntry]);
+    }
+
+    await loadData();
+    flashToast(`Import complete: ${insertedItems.length} added, ${updatedItems.length} updated.`);
+    document.getElementById('importWizardOverlay').classList.remove('show');
+  } catch (error) {
+    customAlert(error.message, "Import Failed", "error");
+  } finally {
+    btn.textContent = 'Start Import';
+    btn.disabled = false;
+    pendingImportData = [];
+  }
 });
 
 // ========== INIT & EVENT LISTENERS ==========
@@ -1236,26 +1597,18 @@ const customSelectTitle = document.getElementById('customSelectTitle');
 const customSelectList = document.getElementById('customSelectList');
 const closeCustomSelectBtn = document.getElementById('closeCustomSelectBtn');
 
-// Helper to safely get clean modal title without grabbing adjacent select options
 function getSelectTitle(select) {
   if (select.dataset.label) return select.dataset.label;
-
-  // Check if previous element is a REAL <label>
   const prev = select.previousElementSibling;
   if (prev && prev.tagName === 'LABEL') {
     return prev.textContent.trim();
   }
-
-  // Check associated label
   if (select.labels && select.labels.length > 0) {
     return select.labels[0].textContent.trim();
   }
-
-  // Fallback to first option text (e.g. "All categories") or default
   if (select.options && select.options.length > 0 && select.options[0].text) {
     return select.options[0].text.trim();
   }
-
   return 'Select Option';
 }
 
@@ -1296,8 +1649,6 @@ customSelectOverlay.addEventListener('click', (e) => {
   if (e.target === customSelectOverlay) closeCustomSelect();
 });
 
-// Attach custom picker to all filter and modal select elements
-// Attach custom picker with smart scroll-drag detection for mobile
 function bindCustomSelects() {
   const selectElements = document.querySelectorAll('select');
 
@@ -1306,19 +1657,16 @@ function bindCustomSelects() {
     let touchStartY = 0;
     let isScrolling = false;
 
-    // 1. Desktop Mouse Click Handling
     select.addEventListener('mousedown', (e) => {
-      // Direct mouse click on desktop
       e.preventDefault();
       openCustomSelect(select);
     });
 
-    // 2. Mobile Touch Handling (Allows natural page scrolling over dropdowns)
     select.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
-        isScrolling = false; // Reset scroll status on touch start
+        isScrolling = false;
       }
     }, { passive: true });
 
@@ -1326,8 +1674,6 @@ function bindCustomSelects() {
       if (e.touches.length === 1) {
         const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
         const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-
-        // If finger moves more than 8px in any direction, user is scrolling the page!
         if (deltaX > 8 || deltaY > 8) {
           isScrolling = true;
         }
@@ -1335,7 +1681,6 @@ function bindCustomSelects() {
     }, { passive: true });
 
     select.addEventListener('touchend', (e) => {
-      // Only open the custom select if it was a clean tap (not a scroll gesture)
       if (!isScrolling) {
         e.preventDefault();
         openCustomSelect(select);
@@ -1348,9 +1693,7 @@ document.addEventListener('DOMContentLoaded', bindCustomSelects);
 
 // ========== AUTOMATIC SCROLL LOCK FOR OVERLAYS & MODALS ==========
 function checkModalScrollLock() {
-  // Add a scroll lock whenever a modal or welcome screen is visible
   const activeOverlays = document.querySelectorAll('.overlay.show, .gateway-overlay:not(.hidden)');
-  
   if (activeOverlays.length > 0) {
     document.body.classList.add('no-scroll');
   } else {
@@ -1358,17 +1701,14 @@ function checkModalScrollLock() {
   }
 }
 
-// Watch the DOM for '.show' class changes on overlays and gateway screens
 const overlayObserver = new MutationObserver(() => {
   checkModalScrollLock();
 });
 
-// Attach the observer to all overlay and welcome-screen elements
 document.querySelectorAll('.overlay, .gateway-overlay').forEach(overlay => {
   overlayObserver.observe(overlay, { attributes: true, attributeFilter: ['class'] });
 });
 
-// Run an initial check when the app loads
 checkModalScrollLock();
 
 // ========== SMART TOUCH HANDLER FOR DROPDOWNS (EXPORT, IMPORT, PROFILE) ==========
@@ -1396,7 +1736,6 @@ function bindDropdownButtons() {
         const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
         const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
 
-        // If finger moves more than 8px, user is scrolling, NOT tapping!
         if (deltaX > 8 || deltaY > 8) {
           isScrolling = true;
         }
@@ -1404,12 +1743,10 @@ function bindDropdownButtons() {
     }, { passive: true });
 
     trigger.addEventListener('touchend', (e) => {
-      // Only open if it was a clean tap (not a scroll swipe)
       if (!isScrolling) {
         e.preventDefault();
         const isOpen = dropdown.classList.contains('open');
 
-        // Close all other dropdowns
         document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open'));
 
         if (!isOpen) {
@@ -1419,7 +1756,6 @@ function bindDropdownButtons() {
     });
   });
 
-  // Close dropdowns when tapping anywhere outside
   const closeOutside = (e) => {
     if (!e.target.closest('.dropdown')) {
       document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open'));
@@ -1430,7 +1766,6 @@ function bindDropdownButtons() {
   document.addEventListener('click', closeOutside);
 }
 
-// Ensure bindDropdownButtons runs when DOM is loaded
 document.addEventListener('DOMContentLoaded', bindDropdownButtons);
 
 // ========== THEME CONTROLLER (LIGHT / DARK) ==========
@@ -1447,11 +1782,9 @@ function applyTheme(theme) {
   }
 }
 
-// 1. Default to 'light' unless user has saved 'dark' previously
 const initialTheme = localStorage.getItem('wingmacc_theme') || 'light';
 applyTheme(initialTheme);
 
-// 2. Toggle on button click
 if (themeToggleBtn) {
   themeToggleBtn.addEventListener('click', () => {
     const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
@@ -1461,7 +1794,281 @@ if (themeToggleBtn) {
   });
 }
 
+// ========== VIEW MODE TOGGLE LOGIC ==========
+let currentViewMode = localStorage.getItem('wingmacc_view_mode') || 'grid';
+
+function applyViewMode(mode) {
+  currentViewMode = mode;
+  localStorage.setItem('wingmacc_view_mode', mode);
+  
+  const icon = document.getElementById('viewToggleIcon');
+  if (icon) {
+    icon.setAttribute('data-lucide', mode === 'grid' ? 'list' : 'layout-grid');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  document.querySelectorAll('.grid').forEach(grid => {
+    grid.classList.remove('animate-switch');
+    void grid.offsetWidth; 
+    
+    grid.classList.add('animate-switch');
+    
+    if (mode === 'list') {
+      grid.classList.add('list-view');
+    } else {
+      grid.classList.remove('list-view');
+    }
+  });
+}
+
+document.getElementById('viewToggleBtn').addEventListener('click', () => {
+  applyViewMode(currentViewMode === 'grid' ? 'list' : 'grid');
+});
+
+document.getElementById('closeViewItemBtn').addEventListener('click', () => {
+  document.getElementById('viewItemOverlay').classList.remove('show');
+});
+document.getElementById('viewItemOverlay').addEventListener('click', e => {
+  if (e.target.id === 'viewItemOverlay') document.getElementById('viewItemOverlay').classList.remove('show');
+});
+
+// ========== GALLERY CAROUSEL LOGIC ==========
+function updateGalleryCarousel() {
+  const img = document.getElementById('galleryImage');
+  const noImg = document.getElementById('galleryNoImage');
+  const prevBtn = document.getElementById('galleryPrevBtn');
+  const nextBtn = document.getElementById('galleryNextBtn');
+  const counter = document.getElementById('galleryCounter');
+  const hasImages = galleryImageUrls.length > 0;
+  const hasMultipleImages = galleryImageUrls.length > 1;
+
+  if (hasImages) {
+    img.src = galleryImageUrls[currentGalleryIdx];
+    img.alt = `Gear image ${currentGalleryIdx + 1} of ${galleryImageUrls.length}`;
+    img.style.display = 'block';
+    noImg.style.display = 'none';
+  } else {
+    img.removeAttribute('src');
+    img.style.display = 'none';
+    noImg.style.display = 'block';
+  }
+
+  prevBtn.style.display = hasMultipleImages ? 'flex' : 'none';
+  nextBtn.style.display = hasMultipleImages ? 'flex' : 'none';
+  counter.style.display = hasMultipleImages ? 'block' : 'none';
+  if (hasMultipleImages) {
+    counter.textContent = `${currentGalleryIdx + 1} / ${galleryImageUrls.length}`;
+  }
+}
+
+document.getElementById('galleryPrevBtn')?.addEventListener('click', () => {
+  if (galleryImageUrls.length < 2) return;
+  currentGalleryIdx = (currentGalleryIdx - 1 + galleryImageUrls.length) % galleryImageUrls.length;
+  updateGalleryCarousel();
+});
+
+document.getElementById('galleryNextBtn')?.addEventListener('click', () => {
+  if (galleryImageUrls.length < 2) return;
+  currentGalleryIdx = (currentGalleryIdx + 1) % galleryImageUrls.length;
+  updateGalleryCarousel();
+});
+
+// ========== FULLSCREEN ZOOM & PINCH-TO-ZOOM LOGIC ==========
+const galleryImage = document.getElementById('galleryImage');
+const fullscreenZoomOverlay = document.getElementById('fullscreenZoomOverlay');
+const fullscreenZoomImage = document.getElementById('fullscreenZoomImage');
+const closeZoomBtn = document.getElementById('closeZoomBtn');
+const zoomTip = document.getElementById('zoomTip');
+
+let scale = 1;
+let pointX = 0;
+let pointY = 0;
+let startX = 0;
+let startY = 0;
+let panning = false;
+let pinchStartDistance = 0;
+let baseScale = 1;
+
+function setZoomTransform(smooth = false) {
+  fullscreenZoomImage.style.transition = smooth ? 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none';
+  fullscreenZoomImage.style.transform = `translate(${pointX}px, ${pointY}px) scale(${scale})`;
+}
+
+function resetZoom() {
+  scale = 1;
+  pointX = 0;
+  pointY = 0;
+  panning = false;
+  pinchStartDistance = 0;
+  baseScale = 1;
+  setZoomTransform(true);
+  zoomTip.style.opacity = '1';
+}
+
+if (galleryImage) {
+  galleryImage.addEventListener('click', () => {
+    if (!galleryImage.src) return;
+    fullscreenZoomImage.src = galleryImage.src;
+    resetZoom();
+    fullscreenZoomOverlay.classList.add('show');
+    closeZoomBtn.focus();
+    if (window.lucide) lucide.createIcons();
+  });
+}
+
+if (fullscreenZoomImage) {
+  fullscreenZoomImage.addEventListener('dblclick', e => {
+    e.stopPropagation();
+    if (scale > 1) {
+      resetZoom();
+    } else {
+      scale = 2.5;
+      pointX = 0;
+      pointY = 0;
+      setZoomTransform(true);
+      zoomTip.style.opacity = '0';
+    }
+  });
+
+  fullscreenZoomImage.addEventListener('mousedown', e => {
+    if (e.button !== 0 || scale <= 1) return;
+    e.preventDefault();
+    startX = e.clientX - pointX;
+    startY = e.clientY - pointY;
+    panning = true;
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (!panning) return;
+    pointX = e.clientX - startX;
+    pointY = e.clientY - startY;
+    setZoomTransform();
+  });
+
+  window.addEventListener('mouseup', () => {
+    panning = false;
+  });
+
+  fullscreenZoomImage.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      pinchStartDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      baseScale = scale;
+      panning = false;
+    } else if (e.touches.length === 1) {
+      startX = e.touches[0].clientX - pointX;
+      startY = e.touches[0].clientY - pointY;
+      panning = scale > 1;
+    }
+  }, { passive: true });
+
+  fullscreenZoomImage.addEventListener('touchmove', e => {
+    if (e.touches.length === 2 && pinchStartDistance > 0) {
+      e.preventDefault();
+      const currentDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      scale = Math.max(1, Math.min(baseScale * currentDistance / pinchStartDistance, 5));
+      setZoomTransform();
+      zoomTip.style.opacity = scale > 1 ? '0' : '1';
+    } else if (e.touches.length === 1 && panning && scale > 1) {
+      e.preventDefault();
+      pointX = e.touches[0].clientX - startX;
+      pointY = e.touches[0].clientY - startY;
+      setZoomTransform();
+    }
+  }, { passive: false });
+
+  fullscreenZoomImage.addEventListener('touchend', e => {
+    if (e.touches.length < 2) {
+      pinchStartDistance = 0;
+      baseScale = scale;
+    }
+    if (e.touches.length === 1 && scale > 1) {
+      startX = e.touches[0].clientX - pointX;
+      startY = e.touches[0].clientY - pointY;
+      panning = true;
+    } else if (e.touches.length === 0) {
+      panning = false;
+      if (scale < 1) resetZoom();
+    }
+  });
+}
+
+function closeZoom() {
+  fullscreenZoomOverlay.classList.remove('show');
+  resetZoom();
+}
+
+if (closeZoomBtn) closeZoomBtn.addEventListener('click', closeZoom);
+
+if (fullscreenZoomOverlay) {
+  fullscreenZoomOverlay.addEventListener('click', e => {
+    if (e.target.id === 'zoomContainer' || e.target.id === 'fullscreenZoomOverlay') {
+      closeZoom();
+    }
+  });
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && fullscreenZoomOverlay.classList.contains('show')) {
+    closeZoom();
+  }
+});
+
+// ========== SMART SCROLL HEADER ==========
+let lastScrollY = window.scrollY;
+const topbar = document.querySelector('.topbar');
+
+let isHeaderHidden = false;
+let isHeaderCompact = false;
+let scrollUpDistance = 0; // BAGO: Taga-bilang kung gaano kalayo na ang inakyat ng daliri mo
+
+window.addEventListener('scroll', () => {
+  const currentScrollY = window.scrollY;
+  
+  // 1. Kapag nasa pinaka-tuktok na talaga
+  if (currentScrollY <= 10) {
+    if (isHeaderHidden || isHeaderCompact) {
+      topbar.classList.remove('hidden-scroll', 'compact');
+      isHeaderHidden = false;
+      isHeaderCompact = false;
+    }
+    scrollUpDistance = 0; // I-reset ang counter
+  } 
+  // 2. Kapag nag-scroll PABABA (Naghahanap)
+  else if (currentScrollY > lastScrollY) {
+    scrollUpDistance = 0; // I-reset ang upward counter dahil bumaba ulit ang user
+    
+    if (!isHeaderHidden && currentScrollY > 100) {
+      topbar.classList.remove('compact');
+      topbar.classList.add('hidden-scroll');
+      isHeaderHidden = true;
+      isHeaderCompact = false;
+    }
+  } 
+  // 3. Kapag nag-scroll PATAAS
+  else if (currentScrollY < lastScrollY) {
+    // I-add kung ilang pixels na ang nai-scroll pataas
+    scrollUpDistance += (lastScrollY - currentScrollY);
+    
+    // REQUIREMENT: Kailangan umabot sa 60px na dire-diretsong taas bago ilabas ang header
+    if (scrollUpDistance > 60) {
+      if (isHeaderHidden || !isHeaderCompact) {
+        topbar.classList.remove('hidden-scroll');
+        topbar.classList.add('compact');
+        isHeaderHidden = false;
+        isHeaderCompact = true;
+      }
+    }
+  }
+  
+  lastScrollY = currentScrollY;
+}, { passive: true });
+
 // Boot up!
 checkAuth();
 loadData();
-
