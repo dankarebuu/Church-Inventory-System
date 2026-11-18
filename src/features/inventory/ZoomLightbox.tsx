@@ -14,6 +14,7 @@ export interface ZoomLightboxProps {
 const MIN_SCALE = 1;
 const MAX_SCALE = 5;
 const DOUBLE_CLICK_SCALE = 2.5;
+const DRAG_THRESHOLD_PX = 4;
 
 function clampScale(next: number): number {
   return Math.max(MIN_SCALE, Math.min(next, MAX_SCALE));
@@ -45,6 +46,7 @@ export function ZoomLightbox({
   const [isPanning, setIsPanning] = useState(false);
 
   const panOriginRef = useRef({ x: 0, y: 0 });
+  const panStartPointerRef = useRef({ x: 0, y: 0 });
   const offsetRef = useRef(offset);
   offsetRef.current = offset;
   const scaleRef = useRef(scale);
@@ -52,16 +54,32 @@ export function ZoomLightbox({
   const pinchStartDistanceRef = useRef(0);
   const pinchBaseScaleRef = useRef(MIN_SCALE);
   const panningRef = useRef(false);
+  const didDragRef = useRef(false);
+  const suppressNextClickRef = useRef(false);
+  const suppressResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const resetZoom = useCallback((smooth = true) => {
-    setSmoothTransition(smooth);
-    setScale(MIN_SCALE);
-    setOffset({ x: 0, y: 0 });
-    setIsPanning(false);
-    panningRef.current = false;
-    pinchStartDistanceRef.current = 0;
-    pinchBaseScaleRef.current = MIN_SCALE;
+  const clearSuppressTimer = useCallback(() => {
+    if (suppressResetTimerRef.current !== null) {
+      clearTimeout(suppressResetTimerRef.current);
+      suppressResetTimerRef.current = null;
+    }
   }, []);
+
+  const resetZoom = useCallback(
+    (smooth = true) => {
+      clearSuppressTimer();
+      setSmoothTransition(smooth);
+      setScale(MIN_SCALE);
+      setOffset({ x: 0, y: 0 });
+      setIsPanning(false);
+      panningRef.current = false;
+      didDragRef.current = false;
+      suppressNextClickRef.current = false;
+      pinchStartDistanceRef.current = 0;
+      pinchBaseScaleRef.current = MIN_SCALE;
+    },
+    [clearSuppressTimer]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -109,6 +127,15 @@ export function ZoomLightbox({
 
     const handleWindowMouseMove = (event: MouseEvent) => {
       if (!panningRef.current) return;
+      if (!didDragRef.current) {
+        const distance = Math.hypot(
+          event.clientX - panStartPointerRef.current.x,
+          event.clientY - panStartPointerRef.current.y
+        );
+        if (distance > DRAG_THRESHOLD_PX) {
+          didDragRef.current = true;
+        }
+      }
       setSmoothTransition(false);
       setOffset({
         x: event.clientX - panOriginRef.current.x,
@@ -118,8 +145,19 @@ export function ZoomLightbox({
 
     const handleWindowMouseUp = () => {
       if (!panningRef.current) return;
+      const wasDrag = didDragRef.current;
       panningRef.current = false;
+      didDragRef.current = false;
       setIsPanning(false);
+
+      if (wasDrag) {
+        suppressNextClickRef.current = true;
+        clearSuppressTimer();
+        suppressResetTimerRef.current = setTimeout(() => {
+          suppressNextClickRef.current = false;
+          suppressResetTimerRef.current = null;
+        }, 0);
+      }
     };
 
     window.addEventListener('mousemove', handleWindowMouseMove);
@@ -127,8 +165,9 @@ export function ZoomLightbox({
     return () => {
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
+      clearSuppressTimer();
     };
-  }, [open]);
+  }, [open, clearSuppressTimer]);
 
   if (!open || images.length === 0) return null;
 
@@ -159,6 +198,10 @@ export function ZoomLightbox({
   const handleMouseDown = (event: React.MouseEvent<HTMLImageElement>) => {
     if (event.button !== 0 || scaleRef.current <= MIN_SCALE) return;
     event.preventDefault();
+    clearSuppressTimer();
+    didDragRef.current = false;
+    suppressNextClickRef.current = false;
+    panStartPointerRef.current = { x: event.clientX, y: event.clientY };
     panOriginRef.current = {
       x: event.clientX - offsetRef.current.x,
       y: event.clientY - offsetRef.current.y,
@@ -239,18 +282,25 @@ export function ZoomLightbox({
     handleStepZoom(delta);
   };
 
+  const handleBackdropOrStageClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      clearSuppressTimer();
+      return;
+    }
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={`${title} lightbox preview`}
       className="fixed inset-0 z-[70] flex flex-col bg-black/92 text-white backdrop-blur-sm"
-      onClick={(event) => {
-        event.stopPropagation();
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
+      onClick={handleBackdropOrStageClick}
       onWheel={handleWheel}
     >
       {/* Top Toolbar */}
@@ -321,12 +371,7 @@ export function ZoomLightbox({
       <div
         data-testid="lightbox-stage"
         className="relative flex flex-1 items-center justify-center overflow-hidden p-4 select-none"
-        onClick={(event) => {
-          event.stopPropagation();
-          if (event.target === event.currentTarget) {
-            onClose();
-          }
-        }}
+        onClick={handleBackdropOrStageClick}
       >
         {images.length > 1 && (
           <Button

@@ -44,13 +44,16 @@ import {
   type EnrichedInventoryItem,
 } from '@/features/inventory/useInventory';
 import { sortLocations, useLocations } from '@/features/locations/useLocations';
-import type { ItemCondition } from '@/types/database';
+import type { Category, ItemCondition, LocationRecord } from '@/types/database';
 
 export const VIEW_MODE_STORAGE_KEY = 'wingmacc_view_mode';
 
 export type InventoryViewMode = 'grid' | 'table';
 
 const ALL_OPTION = '__all__';
+const EMPTY_ITEMS: EnrichedInventoryItem[] = [];
+const EMPTY_CATEGORIES: Category[] = [];
+const EMPTY_LOCATIONS: LocationRecord[] = [];
 
 export interface InventoryPageProps {
   headerActions?: ReactNode;
@@ -103,14 +106,14 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const {
-    data: items = [],
+    data: items = EMPTY_ITEMS,
     isLoading,
     isError,
     error,
     refetch,
   } = useInventoryItems(role);
-  const { data: categories = [] } = useCategories();
-  const { data: locations = [] } = useLocations();
+  const { data: categories = EMPTY_CATEGORIES } = useCategories();
+  const { data: locations = EMPTY_LOCATIONS } = useLocations();
   const {
     softDeleteItem,
     memberCheckItem,

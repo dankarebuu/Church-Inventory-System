@@ -174,21 +174,48 @@ export function ItemFormDialog({
     return sortCategories(categories.filter((cat) => cat.parent_id === selectedCategoryId));
   }, [categories, selectedCategoryId]);
 
+  const wasOpenRef = useRef(false);
+  const initializedItemIdRef = useRef<string | null>(null);
+  const latestInitContextRef = useRef({ item, topCategories, sortedLocations });
+  latestInitContextRef.current = { item, topCategories, sortedLocations };
+
+  const currentItemId = item?.id ?? null;
+
   useEffect(() => {
-    if (open) {
-      revokeAllObjectUrls();
-      setPendingPhotos([]);
-      setExistingPhotos(parseImages(item?.image_filename));
-      setPhotoError(null);
-      setSubmitError(null);
-      reset(buildDefaultFormValues(item, topCategories, sortedLocations));
-    } else {
-      revokeAllObjectUrls();
-      setPendingPhotos([]);
-      setPhotoError(null);
-      setSubmitError(null);
+    if (!open) {
+      if (wasOpenRef.current) {
+        revokeAllObjectUrls();
+        setPendingPhotos([]);
+        setPhotoError(null);
+        setSubmitError(null);
+      }
+      wasOpenRef.current = false;
+      initializedItemIdRef.current = null;
+      return;
     }
-  }, [open, item, topCategories, sortedLocations, reset, revokeAllObjectUrls]);
+
+    const isOpening = !wasOpenRef.current;
+    const itemChanged = currentItemId !== initializedItemIdRef.current;
+    if (!isOpening && !itemChanged) {
+      return;
+    }
+
+    wasOpenRef.current = true;
+    initializedItemIdRef.current = currentItemId;
+
+    const {
+      item: latestItem,
+      topCategories: latestTopCategories,
+      sortedLocations: latestSortedLocations,
+    } = latestInitContextRef.current;
+
+    revokeAllObjectUrls();
+    setPendingPhotos([]);
+    setExistingPhotos(parseImages(latestItem?.image_filename));
+    setPhotoError(null);
+    setSubmitError(null);
+    reset(buildDefaultFormValues(latestItem, latestTopCategories, latestSortedLocations));
+  }, [open, currentItemId, reset, revokeAllObjectUrls]);
 
   useEffect(() => {
     return () => {

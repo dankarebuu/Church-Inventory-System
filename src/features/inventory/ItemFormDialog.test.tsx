@@ -296,4 +296,51 @@ describe('ItemFormDialog', () => {
     expect(createObjectUrlSpy).not.toHaveBeenCalled();
     expect(await screen.findByRole('alert')).toHaveTextContent(/manual\.pdf/i);
   });
+
+  it('preserves unsaved edits and pending photos when categories/locations references change while open', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    const { rerender } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ItemFormDialog
+          open={true}
+          onOpenChange={onOpenChange}
+          item={makeItem({ item: 'Original Snare' })}
+          categories={mockCategories}
+          locations={mockLocations}
+        />
+      </QueryClientProvider>
+    );
+
+    const nameInput = screen.getByLabelText(/item name/i) as HTMLInputElement;
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Edited Brass Snare');
+
+    const fileInput = screen.getByLabelText(/upload photos/i);
+    const f1 = new File(['img-1'], 'pending-snare.png', { type: 'image/png' });
+    await user.upload(fileInput, [f1]);
+
+    expect(nameInput.value).toBe('Edited Brass Snare');
+    expect(screen.getAllByRole('button', { name: /remove photo/i })).toHaveLength(1);
+    expect(revokeObjectUrlSpy).not.toHaveBeenCalled();
+
+    // Simulate background query refetch / Realtime invalidation supplying fresh array & object references
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ItemFormDialog
+          open={true}
+          onOpenChange={onOpenChange}
+          item={makeItem({ item: 'Original Snare' })}
+          categories={[...mockCategories]}
+          locations={[...mockLocations]}
+        />
+      </QueryClientProvider>
+    );
+
+    expect((screen.getByLabelText(/item name/i) as HTMLInputElement).value).toBe(
+      'Edited Brass Snare'
+    );
+    expect(screen.getAllByRole('button', { name: /remove photo/i })).toHaveLength(1);
+    expect(revokeObjectUrlSpy).not.toHaveBeenCalled();
+  });
 });

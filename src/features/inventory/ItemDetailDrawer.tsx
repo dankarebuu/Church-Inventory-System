@@ -54,6 +54,8 @@ export interface ItemDetailDrawerProps {
   onReturnLoan?: (loan: LoanRecord, item: EnrichedInventoryItem) => void;
 }
 
+const EMPTY_LOCATIONS: LocationRecord[] = [];
+
 /**
  * Slide-over equipment detail drawer with multi-photo carousel, ZoomLightbox
  * trigger, full specs, role-isolated loan details, quick checks, and CRUD actions.
@@ -64,7 +66,7 @@ export function ItemDetailDrawer({
   onOpenChange,
   role,
   categories,
-  locations = [],
+  locations = EMPTY_LOCATIONS,
   onQuickCheck,
   isChecking = false,
   onEdit,
