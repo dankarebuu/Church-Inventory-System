@@ -1,23 +1,167 @@
+import { useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { AppShell } from '@/components/layout/AppShell';
+import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+} from '@/components/ui/card';
 import { Toaster } from '@/components/ui/sonner';
+import { AuthModal } from '@/features/auth/AuthModal';
+import { AuthProvider } from '@/features/auth/useAuth';
+import { WelcomeGateway } from '@/features/auth/WelcomeGateway';
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 
-export function App() {
+interface RoutePlaceholderProps {
+  title: string;
+  description: string;
+  badge: string;
+}
+
+function RoutePlaceholder({ title, description, badge }: RoutePlaceholderProps) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-background px-6 text-foreground">
-      <div className="flex max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-card p-8 text-center shadow-card">
-        <img
-          src="/images/logo.svg"
-          alt="WINGMACC Band Inventory logo"
-          className="size-14"
-        />
-        <h1 className="font-display text-2xl font-bold tracking-wide">
-          WINGMACC
-        </h1>
-        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          Band Department Inventory
-        </p>
-      </div>
+    <section className="mx-auto max-w-4xl">
+      <Card className="shadow-card">
+        <CardHeader>
+          <span className="w-fit rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+            {badge}
+          </span>
+          <h1 className="font-display text-2xl font-bold leading-tight tracking-tight text-foreground">
+            {title}
+          </h1>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Workspace shell, role guards, and Realtime sync are active for this route.
+          </p>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+export function createAppQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 30_000,
+        retry: 1,
+        refetchOnWindowFocus: false,
+      },
+    },
+  });
+}
+
+export function AppRoutes() {
+  return (
+    <>
+      <Routes>
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route element={<AppShell />}>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route
+            path="/dashboard"
+            element={
+              <RoutePlaceholder
+                badge="Workspace Overview"
+                title="Operations Dashboard"
+                description="Equipment overview, flagged items, active loans, and category health."
+              />
+            }
+          />
+          <Route
+            path="/inventory"
+            element={
+              <RoutePlaceholder
+                badge="Gear Catalog"
+                title="Inventory Catalog"
+                description="Browse, filter, inspect, and manage WINGMACC band equipment."
+              />
+            }
+          />
+          <Route
+            path="/categories"
+            element={
+              <RoutePlaceholder
+                badge="Organization"
+                title="Categories & Locations"
+                description="Manage 2-level equipment categories and storage locations."
+              />
+            }
+          />
+          <Route
+            path="/checklist"
+            element={
+              <RoutePlaceholder
+                badge="Sunday Ops"
+                title="Sunday Checklist"
+                description="Shared live Sunday check-off and printable PDF checklist sheet."
+              />
+            }
+          />
+          <Route
+            path="/loans"
+            element={
+              <ProtectedRoute allowedRoles={['member', 'admin']}>
+                <RoutePlaceholder
+                  badge="Member & Admin"
+                  title="Loans & Check-Out"
+                  description="Track active check-outs, due dates, overdue alerts, and gear returns."
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activity"
+            element={
+              <ProtectedRoute allowedRoles={['member', 'admin']}>
+                <RoutePlaceholder
+                  badge="Audit Trail"
+                  title="Activity Log"
+                  description="Searchable history of gear checks, updates, loans, and restorations."
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/team"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <RoutePlaceholder
+                  badge="Admin Only"
+                  title="Team Roles"
+                  description="Manage Band Member and Admin access roles across team profiles."
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Route>
+      </Routes>
+
+      <WelcomeGateway />
+      <AuthModal />
       <Toaster />
-    </main>
+    </>
+  );
+}
+
+export function App({ queryClient: providedQueryClient }: { queryClient?: QueryClient } = {}) {
+  const [defaultQueryClient] = useState(createAppQueryClient);
+  const queryClient = providedQueryClient ?? defaultQueryClient;
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }
 
