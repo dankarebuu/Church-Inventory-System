@@ -91,18 +91,27 @@ function applyDocumentTheme(theme: ThemeMode): void {
   }
 }
 
-async function fetchProfileRow(userId: string): Promise<ProfileRecord | null> {
+type ProfileLookupResult =
+  | { status: 'found'; profile: ProfileRecord }
+  | { status: 'missing' }
+  | { status: 'error' };
+
+async function fetchProfileRow(userId: string): Promise<ProfileLookupResult> {
   const { data, error } = await supabase
     .from('profiles')
     .select('id, email, first_name, last_name, role, created_at')
     .eq('id', userId)
     .maybeSingle();
 
-  if (error || !data) {
-    return null;
+  if (error) {
+    return { status: 'error' };
   }
 
-  return data;
+  if (!data) {
+    return { status: 'missing' };
+  }
+
+  return { status: 'found', profile: data };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -119,8 +128,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const mountedRef = useRef<boolean>(true);
   const requestSeqRef = useRef<number>(0);
+  const pendingRecoveryRef = useRef<boolean>(false);
   const userRef = useRef<User | null>(null);
   userRef.current = user;
+  const latestAuthUserRef = useRef<User | null>(null);
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
 
@@ -128,33 +139,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     applyDocumentTheme(theme);
   }, [theme]);
 
-  const applySession = useCallback(async (session: Session | null, seq: number) => {
-    const nextUser = session?.user ?? null;
-
-    if (!nextUser) {
-      if (!mountedRef.current || seq !== requestSeqRef.current) return;
-      setUser(null);
-      setProfile(null);
-      setIsLoading(false);
-      return;
-    }
-
-    if (userRef.current?.id !== nextUser.id) {
-      setIsLoading(true);
-    }
-
-    let nextProfile: ProfileRecord | null = null;
+  const commitAuthenticatedUser = useCallback(async (nextUser: User, seq: number) => {
+    let lookup: ProfileLookupResult;
     try {
-      nextProfile = await fetchProfileRow(nextUser.id);
+      lookup = await fetchProfileRow(nextUser.id);
     } catch {
-      nextProfile = null;
+      lookup = { status: 'error' };
     }
 
     if (!mountedRef.current || seq !== requestSeqRef.current) return;
+
     setUser(nextUser);
-    setProfile(nextProfile);
+    setProfile((prev) => {
+      if (lookup.status === 'found') return lookup.profile;
+      if (lookup.status === 'missing') return null;
+      return prev?.id === nextUser.id ? prev : null;
+    });
     setIsLoading(false);
+
+    if (pendingRecoveryRef.current) {
+      pendingRecoveryRef.current = false;
+      navigateRef.current('/reset-password');
+    }
   }, []);
+
+  const applySession = useCallback(
+    async (session: Session | null, seq: number) => {
+      const nextUser = session?.user ?? null;
+
+      if (!nextUser) {
+        if (!mountedRef.current || seq !== requestSeqRef.current) return;
+        pendingRecoveryRef.current = false;
+        latestAuthUserRef.current = null;
+        setUser(null);
+        setProfile(null);
+        setIsLoading(false);
+        return;
+      }
+
+      latestAuthUserRef.current = nextUser;
+      if (userRef.current?.id !== nextUser.id) {
+        setIsLoading(true);
+      }
+
+      await commitAuthenticatedUser(nextUser, seq);
+    },
+    [commitAuthenticatedUser]
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -164,18 +195,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       const eventSeq = ++requestSeqRef.current;
-      const applyPromise = applySession(session, eventSeq);
 
-      if (event === 'PASSWORD_RECOVERY') {
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        pendingRecoveryRef.current = false;
+      } else if (event === 'PASSWORD_RECOVERY') {
+        pendingRecoveryRef.current = true;
         setIsAuthModalOpen(false);
         setGatewayDismissed(true);
         persistGatewayDismissed(true);
-        void applyPromise.then(() => {
-          if (mountedRef.current && eventSeq === requestSeqRef.current) {
-            navigateRef.current('/reset-password');
-          }
-        });
       }
+
+      void applySession(session, eventSeq);
     });
 
     supabase.auth
@@ -185,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         if (!mountedRef.current || initSeq !== requestSeqRef.current) return;
+        pendingRecoveryRef.current = false;
         setUser(null);
         setProfile(null);
         setIsLoading(false);
@@ -222,25 +253,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const seq = ++requestSeqRef.current;
     try {
       const { data } = await supabase.auth.getSession();
-      const activeUser = data.session?.user ?? userRef.current;
+      if (!mountedRef.current || seq !== requestSeqRef.current) return;
 
+      const activeUser = data.session?.user ?? latestAuthUserRef.current ?? userRef.current;
       if (!activeUser) {
-        if (mountedRef.current && seq === requestSeqRef.current) {
-          setUser(null);
-          setProfile(null);
-        }
+        pendingRecoveryRef.current = false;
+        latestAuthUserRef.current = null;
+        setUser(null);
+        setProfile(null);
         return;
       }
 
-      const nextProfile = await fetchProfileRow(activeUser.id);
-      if (!mountedRef.current || seq !== requestSeqRef.current) return;
-
-      setUser(activeUser);
-      setProfile(nextProfile);
+      latestAuthUserRef.current = activeUser;
+      await commitAuthenticatedUser(activeUser, seq);
     } catch {
       // Retain existing profile state on transient lookup errors.
     }
-  }, []);
+  }, [commitAuthenticatedUser]);
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
@@ -249,6 +278,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    pendingRecoveryRef.current = false;
+    latestAuthUserRef.current = null;
     ++requestSeqRef.current;
     setUser(null);
     setProfile(null);

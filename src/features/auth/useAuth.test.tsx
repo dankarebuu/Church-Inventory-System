@@ -362,4 +362,234 @@ describe('useAuth / AuthProvider', () => {
     });
     expect(sessionStorage.getItem('wingmacc_gateway_dismissed')).toBeNull();
   });
+
+  it('still navigates to /reset-password when TOKEN_REFRESHED overlaps an in-flight PASSWORD_RECOVERY profile fetch', async () => {
+    const recoveryUser = makeUser({ id: 'rec-overlap', email: 'recover@wingmacc.org' });
+    const recoveryProfile: ProfileRecord = {
+      id: 'rec-overlap',
+      email: 'recover@wingmacc.org',
+      first_name: 'Band',
+      last_name: 'Member',
+      role: 'member',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    mockGetSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+
+    renderWithAuth(['/dashboard']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+
+    let resolveRecoveryFetch:
+      | ((value: { data: ProfileRecord | null; error: null }) => void)
+      | undefined;
+    mockMaybeSingle.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRecoveryFetch = resolve;
+        })
+    );
+    mockMaybeSingle.mockResolvedValueOnce({ data: recoveryProfile, error: null });
+
+    await act(async () => {
+      const cb = getAuthCallback();
+      cb?.('PASSWORD_RECOVERY', makeSession(recoveryUser));
+      cb?.('TOKEN_REFRESHED', makeSession(recoveryUser));
+    });
+
+    await act(async () => {
+      resolveRecoveryFetch?.({ data: recoveryProfile, error: null });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/reset-password');
+    });
+    expect(screen.getByTestId('role')).toHaveTextContent('member');
+  });
+
+  it('does not navigate to /reset-password if SIGNED_OUT supersedes an in-flight PASSWORD_RECOVERY', async () => {
+    const recoveryUser = makeUser({ id: 'rec-cancelled', email: 'recover@wingmacc.org' });
+
+    mockGetSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+
+    renderWithAuth(['/dashboard']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+
+    let resolveRecoveryFetch:
+      | ((value: { data: ProfileRecord | null; error: null }) => void)
+      | undefined;
+    mockMaybeSingle.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRecoveryFetch = resolve;
+        })
+    );
+
+    await act(async () => {
+      const cb = getAuthCallback();
+      cb?.('PASSWORD_RECOVERY', makeSession(recoveryUser));
+      cb?.('SIGNED_OUT', null);
+    });
+
+    await act(async () => {
+      resolveRecoveryFetch?.({ data: null, error: null });
+    });
+
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/dashboard');
+    expect(screen.getByTestId('role')).toHaveTextContent('guest');
+  });
+
+  it('preserves existing admin profile on transient profiles query errors during TOKEN_REFRESHED and refreshProfile', async () => {
+    const user = userEvent.setup();
+    const adminUser = makeUser({ id: 'admin-keep', email: 'admin@wingmacc.org' });
+    const adminProfile: ProfileRecord = {
+      id: 'admin-keep',
+      email: 'admin@wingmacc.org',
+      first_name: 'Dan',
+      last_name: 'Caleb',
+      role: 'admin',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(adminUser) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({ data: adminProfile, error: null });
+
+    renderWithAuth(['/dashboard']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+    expect(screen.getByTestId('role')).toHaveTextContent('admin');
+    expect(screen.getByTestId('profile-name')).toHaveTextContent('Dan Caleb');
+
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'PostgREST transient failure' },
+    });
+
+    await act(async () => {
+      getAuthCallback()?.('TOKEN_REFRESHED', makeSession(adminUser));
+    });
+
+    await waitFor(() => {
+      expect(mockMaybeSingle).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByTestId('role')).toHaveTextContent('admin');
+    expect(screen.getByTestId('profile-name')).toHaveTextContent('Dan Caleb');
+
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'Temporary network error' },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Refresh Profile' }));
+
+    await waitFor(() => {
+      expect(mockMaybeSingle).toHaveBeenCalledTimes(3);
+    });
+    expect(screen.getByTestId('role')).toHaveTextContent('admin');
+    expect(screen.getByTestId('profile-name')).toHaveTextContent('Dan Caleb');
+
+    mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    await user.click(screen.getByRole('button', { name: 'Refresh Profile' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-name')).toHaveTextContent('none');
+    });
+    expect(screen.getByTestId('role')).toHaveTextContent('member');
+  });
+
+  it('still navigates to /reset-password when refreshProfile overlaps an in-flight PASSWORD_RECOVERY and does not carry over another users admin profile on error', async () => {
+    const user = userEvent.setup();
+    const adminUser = makeUser({ id: 'admin-prev', email: 'admin@wingmacc.org' });
+    const adminProfile: ProfileRecord = {
+      id: 'admin-prev',
+      email: 'admin@wingmacc.org',
+      first_name: 'Dan',
+      last_name: 'Caleb',
+      role: 'admin',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    const memberUser = makeUser({ id: 'member-next', email: 'member@wingmacc.org' });
+    const memberProfile: ProfileRecord = {
+      id: 'member-next',
+      email: 'member@wingmacc.org',
+      first_name: 'Band',
+      last_name: 'Member',
+      role: 'member',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(adminUser) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({ data: adminProfile, error: null });
+
+    renderWithAuth(['/dashboard']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('admin');
+    });
+
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'Transient error for new user' },
+    });
+
+    await act(async () => {
+      getAuthCallback()?.('SIGNED_IN', makeSession(memberUser));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-email')).toHaveTextContent('member@wingmacc.org');
+    });
+    expect(screen.getByTestId('role')).toHaveTextContent('member');
+    expect(screen.getByTestId('profile-name')).toHaveTextContent('none');
+
+    mockGetSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+
+    let resolveRecoveryFetch:
+      | ((value: { data: ProfileRecord | null; error: null }) => void)
+      | undefined;
+    mockMaybeSingle.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRecoveryFetch = resolve;
+        })
+    );
+    mockMaybeSingle.mockResolvedValueOnce({ data: memberProfile, error: null });
+
+    await act(async () => {
+      getAuthCallback()?.('PASSWORD_RECOVERY', makeSession(memberUser));
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Refresh Profile' }));
+
+    await act(async () => {
+      resolveRecoveryFetch?.({ data: memberProfile, error: null });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/reset-password');
+    });
+    expect(screen.getByTestId('role')).toHaveTextContent('member');
+  });
 });
