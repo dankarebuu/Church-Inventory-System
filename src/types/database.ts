@@ -99,6 +99,7 @@ export type ImportHistoryPayload = {
 };
 
 export type LoanHistoryPayload = {
+  actionType?: 'checkout' | 'return';
   item_id: string;
   item?: string;
   loan_id?: string;

@@ -15,6 +15,7 @@ import { AuthProvider } from '@/features/auth/useAuth';
 import { WelcomeGateway } from '@/features/auth/WelcomeGateway';
 import { CategoriesPage } from '@/pages/CategoriesPage';
 import { InventoryPage } from '@/pages/InventoryPage';
+import { LoansPage } from '@/pages/LoansPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 
 interface RoutePlaceholderProps {
@@ -91,11 +92,7 @@ export function AppRoutes() {
             path="/loans"
             element={
               <ProtectedRoute allowedRoles={['member', 'admin']}>
-                <RoutePlaceholder
-                  badge="Member & Admin"
-                  title="Loans & Check-Out"
-                  description="Track active check-outs, due dates, overdue alerts, and gear returns."
-                />
+                <LoansPage />
               </ProtectedRoute>
             }
           />

@@ -151,3 +151,48 @@ export function isUniqueConstraintError(error: PostgresErrorLike | null | undefi
   if (error.code === '23505') return true;
   return typeof error.message === 'string' && /duplicate key|unique constraint/i.test(error.message);
 }
+
+export interface ActorProfileLike {
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+}
+
+export interface ActorUserLike {
+  email?: string | null;
+  user_metadata?: Record<string, unknown>;
+}
+
+/**
+ * Resolves a human-readable actor display name from profile fields, auth user
+ * metadata, or email prefix, falling back to `'Team Member'`.
+ */
+export function deriveActorName(
+  profile?: ActorProfileLike | null,
+  user?: ActorUserLike | null
+): string {
+  const profileName = [profile?.first_name, profile?.last_name]
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+    .join(' ')
+    .trim();
+  if (profileName) return profileName;
+
+  const meta = user?.user_metadata ?? {};
+  const metaFull = typeof meta.full_name === 'string' ? meta.full_name.trim() : '';
+  if (metaFull) return metaFull;
+
+  const metaFirst = typeof meta.first_name === 'string' ? meta.first_name.trim() : '';
+  const metaLast = typeof meta.last_name === 'string' ? meta.last_name.trim() : '';
+  const metaCombined = [metaFirst, metaLast].filter(Boolean).join(' ').trim();
+  if (metaCombined) return metaCombined;
+
+  const email = profile?.email ?? user?.email ?? '';
+  return email ? getUserEmailPrefix(email) : 'Team Member';
+}
+
+/**
+ * Generates a timestamp-prefixed unique identifier for `history_log` entries.
+ */
+export function createHistoryId(): string {
+  return `h_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}

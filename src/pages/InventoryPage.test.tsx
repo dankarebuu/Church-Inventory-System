@@ -21,6 +21,8 @@ const mockUseLocations = vi.fn<() => { data: LocationRecord[]; isLoading: boolea
 const mockMemberCheckItem = vi.fn();
 const mockSoftDeleteItem = vi.fn();
 const mockSaveItem = vi.fn();
+const mockCheckoutItem = vi.fn();
+const mockReturnLoan = vi.fn();
 
 vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => mockUseAuth(),
@@ -63,6 +65,21 @@ vi.mock('@/features/locations/useLocations', async () => {
   return {
     ...actual,
     useLocations: () => mockUseLocations(),
+  };
+});
+
+vi.mock('@/features/loans/useLoans', async () => {
+  const actual = await vi.importActual<typeof import('@/features/loans/useLoans')>(
+    '@/features/loans/useLoans'
+  );
+  return {
+    ...actual,
+    useLoanMutations: () => ({
+      checkoutItem: mockCheckoutItem,
+      returnLoan: mockReturnLoan,
+      isCheckingOut: false,
+      isReturning: false,
+    }),
   };
 });
 
@@ -297,6 +314,8 @@ describe('InventoryPage', () => {
     });
     mockSoftDeleteItem.mockResolvedValue(undefined);
     mockSaveItem.mockResolvedValue({});
+    mockCheckoutItem.mockResolvedValue({});
+    mockReturnLoan.mockResolvedValue({});
   });
 
   it('enforces Guest privacy & read-only controls while showing available_qty / qty and anonymous On Loan badge', async () => {
@@ -343,13 +362,42 @@ describe('InventoryPage', () => {
       condition: 'repair',
     });
 
-    // Open ItemDetailDrawer and verify borrower details + Check Out slot
+    // Open ItemDetailDrawer and verify borrower details + Check Out + Return wiring
     await user.click(screen.getByText('Pearl Brass Snare'));
     const drawer = await screen.findByRole('dialog');
     expect(within(drawer).getByText(/Joel Santos/i)).toBeInTheDocument();
     expect(within(drawer).getByRole('button', { name: /check out/i })).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: /^return$/i })).toBeInTheDocument();
     expect(within(drawer).queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
     expect(within(drawer).queryByRole('button', { name: /trash|delete/i })).not.toBeInTheDocument();
+
+    await user.click(within(drawer).getByRole('button', { name: /^return$/i }));
+    await waitFor(() => {
+      expect(mockReturnLoan).toHaveBeenCalledTimes(1);
+    });
+    expect(mockReturnLoan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        loan: expect.objectContaining({ id: 'loan-1' }),
+        itemName: 'Pearl Brass Snare',
+      })
+    );
+
+    await user.click(within(drawer).getByRole('button', { name: /check out/i }));
+    const checkoutDialog = await screen.findByRole('dialog', { name: /check out gear/i });
+    expect(within(checkoutDialog).getByText(/available:\s*1\s*\/\s*2/i)).toBeInTheDocument();
+    await user.type(within(checkoutDialog).getByLabelText(/borrower name/i), 'Sam Lee');
+    await user.click(within(checkoutDialog).getByRole('button', { name: /confirm check out/i }));
+
+    await waitFor(() => {
+      expect(mockCheckoutItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          item_id: 'item-snare',
+          itemName: 'Pearl Brass Snare',
+          borrower_name: 'Sam Lee',
+          qty_loaned: 1,
+        })
+      );
+    });
   });
 
   it('provides Admin Add, Edit, and AlertDialog-confirmed Trash actions', async () => {

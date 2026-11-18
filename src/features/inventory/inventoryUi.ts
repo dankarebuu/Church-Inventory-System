@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, Wrench, type LucideIcon } from 'lucide-react';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
+import { isLoanOverdue } from '@/features/loans/schemas';
 import type { Category, ItemCondition, LocationRecord } from '@/types/database';
 
 export interface ConditionDisplayMeta {
@@ -97,15 +98,5 @@ export function isLoanDateOverdue(
   returnedAt?: string | null,
   referenceDate: Date = new Date()
 ): boolean {
-  if (!dueDate || returnedAt) return false;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueDate.trim());
-  if (!match) return false;
-
-  const due = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  const todayStart = new Date(
-    referenceDate.getFullYear(),
-    referenceDate.getMonth(),
-    referenceDate.getDate()
-  );
-  return due.getTime() < todayStart.getTime();
+  return isLoanOverdue(dueDate, returnedAt, referenceDate);
 }

@@ -1,10 +1,15 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { User } from '@supabase/supabase-js';
 import { useAuth } from '@/features/auth/useAuth';
 import { queryKeys } from '@/lib/queryKeys';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import { formatDisplayDate, getUserEmailPrefix, parseImages } from '@/lib/utils';
+import {
+  createHistoryId,
+  deriveActorName,
+  formatDisplayDate,
+  parseImages,
+  trimOrNull,
+} from '@/lib/utils';
 import type {
   Category,
   Database,
@@ -13,7 +18,6 @@ import type {
   LoanRecord,
   LocationRecord,
   MemberCheckItemResult,
-  ProfileRecord,
   PublicInventoryItem,
   UserRole,
 } from '@/types/database';
@@ -63,38 +67,8 @@ type InventoryInsert = Database['public']['Tables']['inventory']['Insert'];
 type InventoryUpdate = Database['public']['Tables']['inventory']['Update'];
 type HistoryInsert = Database['public']['Tables']['history_log']['Insert'];
 
-function trimOrNull(value?: string | null): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function createItemId(): string {
   return `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function createHistoryId(): string {
-  return `h_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-}
-
-function deriveActorName(profile: ProfileRecord | null, user: User | null): string {
-  const profileName = [profile?.first_name, profile?.last_name]
-    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
-    .join(' ')
-    .trim();
-  if (profileName) return profileName;
-
-  const meta = user?.user_metadata ?? {};
-  const metaFull = typeof meta.full_name === 'string' ? meta.full_name.trim() : '';
-  if (metaFull) return metaFull;
-
-  const metaFirst = typeof meta.first_name === 'string' ? meta.first_name.trim() : '';
-  const metaLast = typeof meta.last_name === 'string' ? meta.last_name.trim() : '';
-  const metaCombined = [metaFirst, metaLast].filter(Boolean).join(' ').trim();
-  if (metaCombined) return metaCombined;
-
-  const email = profile?.email ?? user?.email ?? '';
-  return email ? getUserEmailPrefix(email) : 'Team Member';
 }
 
 function toInventorySnapshot(

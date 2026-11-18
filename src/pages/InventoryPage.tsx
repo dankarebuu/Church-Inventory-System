@@ -43,8 +43,10 @@ import {
   useItemMutations,
   type EnrichedInventoryItem,
 } from '@/features/inventory/useInventory';
+import { CheckoutDialog } from '@/features/loans/CheckoutDialog';
+import { useLoanMutations } from '@/features/loans/useLoans';
 import { sortLocations, useLocations } from '@/features/locations/useLocations';
-import type { Category, ItemCondition, LocationRecord } from '@/types/database';
+import type { Category, ItemCondition, LoanRecord, LocationRecord } from '@/types/database';
 
 export const VIEW_MODE_STORAGE_KEY = 'wingmacc_view_mode';
 
@@ -120,11 +122,17 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     isDeleting,
     isChecking,
   } = useItemMutations();
+  const { checkoutItem, returnLoan, isCheckingOut } = useLoanMutations();
 
   const [viewMode, setViewMode] = useState<InventoryViewMode>(readInitialViewMode);
   const [formOpen, setFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<EnrichedInventoryItem | null>(null);
   const [pendingDeleteItem, setPendingDeleteItem] = useState<EnrichedInventoryItem | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutItemTarget, setCheckoutItemTarget] = useState<EnrichedInventoryItem | null>(
+    null
+  );
+  const [returningLoanId, setReturningLoanId] = useState<string | null>(null);
 
   const canCheck = role === 'member' || role === 'admin';
   const canAdmin = role === 'admin';
@@ -444,6 +452,35 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     [canAdmin]
   );
 
+  const handleOpenCheckout = useCallback(
+    (item: EnrichedInventoryItem) => {
+      if (!canCheck) return;
+      setCheckoutItemTarget(item);
+      setCheckoutOpen(true);
+    },
+    [canCheck]
+  );
+
+  const handleReturnLoan = useCallback(
+    async (loan: LoanRecord, item: EnrichedInventoryItem) => {
+      if (!canCheck) return;
+      setReturningLoanId(loan.id);
+      try {
+        await returnLoan({ loan, itemName: item.item });
+        toast.success(
+          `Returned ${loan.qty_loaned} × "${item.item}" from ${loan.borrower_name}.`
+        );
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Unable to return equipment loan.';
+        toast.error(message);
+      } finally {
+        setReturningLoanId(null);
+      }
+    },
+    [canCheck, returnLoan]
+  );
+
   const handleConfirmDelete = async () => {
     if (!pendingDeleteItem || !canAdmin) return;
     const target = pendingDeleteItem;
@@ -740,7 +777,27 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         isChecking={isChecking}
         onEdit={handleOpenEdit}
         onDelete={setPendingDeleteItem}
+        onCheckout={canCheck ? handleOpenCheckout : undefined}
+        onReturnLoan={canCheck ? handleReturnLoan : undefined}
+        returningLoanId={returningLoanId}
       />
+
+      {/* Member & Admin Equipment Check-Out Dialog */}
+      {canCheck && (
+        <CheckoutDialog
+          open={checkoutOpen}
+          onOpenChange={(nextOpen) => {
+            setCheckoutOpen(nextOpen);
+            if (!nextOpen) {
+              setCheckoutItemTarget(null);
+            }
+          }}
+          items={items}
+          preselectedItem={checkoutItemTarget}
+          onCheckout={checkoutItem}
+          isSubmitting={isCheckingOut}
+        />
+      )}
 
       {/* Admin Add/Edit Modal */}
       {canAdmin && (

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Edit2,
   ImageOff,
+  Loader2,
   Maximize2,
   RotateCcw,
   Trash2,
@@ -21,6 +22,7 @@ import {
 } from '@/components/ui/sheet';
 import { getCategoryColor } from '@/features/categories/useCategories';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
+import { isLoanOverdue } from '@/features/loans/schemas';
 import { cn, formatDisplayDate, parseImages } from '@/lib/utils';
 import type {
   Category,
@@ -31,7 +33,6 @@ import type {
 } from '@/types/database';
 import {
   CONDITION_META,
-  isLoanDateOverdue,
   resolveCategoryName,
   resolveLocationName,
   resolveSubcategoryName,
@@ -52,6 +53,7 @@ export interface ItemDetailDrawerProps {
   onDelete?: (item: EnrichedInventoryItem) => void;
   onCheckout?: (item: EnrichedInventoryItem) => void;
   onReturnLoan?: (loan: LoanRecord, item: EnrichedInventoryItem) => void;
+  returningLoanId?: string | null;
 }
 
 const EMPTY_LOCATIONS: LocationRecord[] = [];
@@ -73,6 +75,7 @@ export function ItemDetailDrawer({
   onDelete,
   onCheckout,
   onReturnLoan,
+  returningLoanId = null,
 }: ItemDetailDrawerProps) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -356,7 +359,8 @@ export function ItemDetailDrawer({
             ) : (
               <div className="space-y-2.5">
                 {activeLoans.map((loan) => {
-                  const overdue = isLoanDateOverdue(loan.due_date, loan.returned_at);
+                  const overdue = isLoanOverdue(loan.due_date, loan.returned_at);
+                  const isReturningThisLoan = returningLoanId === loan.id;
                   return (
                     <div
                       key={loan.id}
@@ -388,10 +392,15 @@ export function ItemDetailDrawer({
                             type="button"
                             size="sm"
                             variant="outline"
+                            disabled={isReturningThisLoan}
                             onClick={() => onReturnLoan(loan, item)}
                           >
-                            <RotateCcw className="size-3.5" aria-hidden="true" />
-                            <span>Return</span>
+                            {isReturningThisLoan ? (
+                              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <RotateCcw className="size-3.5" aria-hidden="true" />
+                            )}
+                            <span>{isReturningThisLoan ? 'Returning...' : 'Return'}</span>
                           </Button>
                         )}
                       </div>
