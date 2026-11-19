@@ -164,4 +164,27 @@ describe('App & AppRoutes', () => {
     });
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/loans');
   });
+
+  it('mounts ChecklistPage at /checklist in Print/PDF mode for guests', async () => {
+    sessionStorage.setItem('wingmacc_gateway_dismissed', 'true');
+    const queryClient = createAppQueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/checklist']}>
+          <AuthProvider>
+            <LocationDisplay />
+            <AppRoutes />
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Sunday Checklist' })).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('app-pathname')).toHaveTextContent('/checklist');
+    expect(screen.getByRole('tab', { name: /print \/ pdf checklist/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /live check-off/i })).not.toBeInTheDocument();
+  });
 });

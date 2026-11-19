@@ -14,6 +14,7 @@ import { AuthModal } from '@/features/auth/AuthModal';
 import { AuthProvider } from '@/features/auth/useAuth';
 import { WelcomeGateway } from '@/features/auth/WelcomeGateway';
 import { CategoriesPage } from '@/pages/CategoriesPage';
+import { ChecklistPage } from '@/pages/ChecklistPage';
 import { InventoryPage } from '@/pages/InventoryPage';
 import { LoansPage } from '@/pages/LoansPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
@@ -78,16 +79,7 @@ export function AppRoutes() {
           />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
-          <Route
-            path="/checklist"
-            element={
-              <RoutePlaceholder
-                badge="Sunday Ops"
-                title="Sunday Checklist"
-                description="Shared live Sunday check-off and printable PDF checklist sheet."
-              />
-            }
-          />
+          <Route path="/checklist" element={<ChecklistPage />} />
           <Route
             path="/loans"
             element={
