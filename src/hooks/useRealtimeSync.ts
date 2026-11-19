@@ -22,8 +22,8 @@ type SyncTableName =
   | 'history_log'
   | 'profiles';
 
-const GUEST_TABLES: readonly SyncTableName[] = ['inventory', 'categories', 'locations'];
-const MEMBER_TABLES: readonly SyncTableName[] = [...GUEST_TABLES, 'loans', 'history_log'];
+const GUEST_TABLES: readonly SyncTableName[] = ['categories', 'locations'];
+const MEMBER_TABLES: readonly SyncTableName[] = ['inventory', ...GUEST_TABLES, 'loans', 'history_log'];
 const ADMIN_TABLES: readonly SyncTableName[] = [...MEMBER_TABLES, 'profiles'];
 
 const STATUS_LABELS: Record<RealtimeSyncState, string> = {
@@ -164,10 +164,14 @@ export function useRealtimeSync(role: UserRole): RealtimeSyncStatus {
   }, [queryClient, role]);
 
   const resolvedStatus: RealtimeSyncState = isSupabaseConfigured ? status : 'offline';
+  const label =
+    resolvedStatus === 'connected' && role === 'guest'
+      ? 'Catalog Sync'
+      : STATUS_LABELS[resolvedStatus];
 
   return {
     status: resolvedStatus,
-    label: STATUS_LABELS[resolvedStatus],
+    label,
     isConfigured: isSupabaseConfigured,
   };
 }

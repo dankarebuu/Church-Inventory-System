@@ -298,12 +298,39 @@ function RoleSummaryPill({ role, collapsed = false }: { role: UserRole; collapse
   );
 }
 
-function RealtimeStatusPill({ syncStatus }: { syncStatus: RealtimeSyncStatus }) {
+function getSyncTooltip(syncStatus: RealtimeSyncStatus, role: UserRole): string {
+  if (syncStatus.status === 'offline') {
+    return role === 'guest'
+      ? 'Offline — catalog sync paused'
+      : 'Offline — realtime sync paused';
+  }
+  if (syncStatus.status === 'error') {
+    return 'Realtime connection issue — data refreshes on navigation';
+  }
+  if (syncStatus.status === 'connecting') {
+    return role === 'guest'
+      ? 'Connecting to live category & location updates...'
+      : 'Connecting to live Realtime sync...';
+  }
+  if (role === 'guest') {
+    return 'Categories & locations sync live; inventory availability refreshes on tab focus and every 60s.';
+  }
+  return 'Connected to live Realtime updates across inventory, loans, and activity.';
+}
+
+function RealtimeStatusPill({
+  syncStatus,
+  role,
+}: {
+  syncStatus: RealtimeSyncStatus;
+  role: UserRole;
+}) {
   return (
     <div
       role="status"
       aria-live="polite"
       aria-label={`Realtime sync: ${syncStatus.label}`}
+      title={getSyncTooltip(syncStatus, role)}
       className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[11px] font-medium text-sync-text shadow-xs"
     >
       <span
@@ -543,7 +570,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
           </div>
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
-            <RealtimeStatusPill syncStatus={syncStatus} />
+            <RealtimeStatusPill syncStatus={syncStatus} role={role} />
 
             <Button
               type="button"

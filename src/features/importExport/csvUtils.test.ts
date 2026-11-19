@@ -5,6 +5,7 @@ import {
   exportItemsToCSV,
   exportItemsToJSON,
   mapCsvRowsByHeader,
+  normalizeImportDueDate,
   parseCSV,
   parseJsonImportPayload,
 } from './csvUtils';
@@ -117,6 +118,74 @@ describe('mapCsvRowsByHeader', () => {
 
     const invalidQtyRows = parseCSV('"Equipment","Qty"\n"Mic","-2"');
     expect(() => mapCsvRowsByHeader(invalidQtyRows)).toThrow(/quantity/i);
+  });
+
+  it('prefers specific Equipment/Item headers over generic Name columns regardless of column order', () => {
+    const csv =
+      '"Name","Equipment","Category","Qty"\n' +
+      '"Worship Lead","Nord Stage 4","Keyboard","1"';
+
+    const items = mapCsvRowsByHeader(parseCSV(csv));
+    expect(items).toHaveLength(1);
+    expect(items[0].item).toBe('Nord Stage 4');
+    expect(items[0].category).toBe('Keyboard');
+
+    const itemWinsCsv =
+      '"Name","Item","Category"\n' +
+      '"Row Label","Shure SM58","Audio"';
+    const itemWins = mapCsvRowsByHeader(parseCSV(itemWinsCsv));
+    expect(itemWins[0].item).toBe('Shure SM58');
+  });
+});
+
+describe('normalizeImportDueDate', () => {
+  it('parses valid calendar dates without timezone shift and rejects JS rollover or bare numeric strings', () => {
+    expect(normalizeImportDueDate('2026-11-25')).toEqual({
+      dueDate: '2026-11-25',
+      unparsedNote: null,
+    });
+    expect(normalizeImportDueDate('11/25/2026')).toEqual({
+      dueDate: '2026-11-25',
+      unparsedNote: null,
+    });
+    expect(normalizeImportDueDate('November 25, 2026')).toEqual({
+      dueDate: '2026-11-25',
+      unparsedNote: null,
+    });
+    expect(normalizeImportDueDate('2024-02-29')).toEqual({
+      dueDate: '2024-02-29',
+      unparsedNote: null,
+    });
+
+    // Reject impossible calendar rollover dates and bare numbers
+    expect(normalizeImportDueDate('2026-11-31')).toEqual({
+      dueDate: null,
+      unparsedNote: 'Imported return date: 2026-11-31',
+    });
+    expect(normalizeImportDueDate('2026-02-29')).toEqual({
+      dueDate: null,
+      unparsedNote: 'Imported return date: 2026-02-29',
+    });
+    expect(normalizeImportDueDate('11/31/2026')).toEqual({
+      dueDate: null,
+      unparsedNote: 'Imported return date: 11/31/2026',
+    });
+    expect(normalizeImportDueDate('November 31, 2026')).toEqual({
+      dueDate: null,
+      unparsedNote: 'Imported return date: November 31, 2026',
+    });
+    expect(normalizeImportDueDate('1')).toEqual({
+      dueDate: null,
+      unparsedNote: 'Imported return date: 1',
+    });
+    expect(normalizeImportDueDate('2026')).toEqual({
+      dueDate: null,
+      unparsedNote: 'Imported return date: 2026',
+    });
+    expect(normalizeImportDueDate('Next Sunday')).toEqual({
+      dueDate: null,
+      unparsedNote: 'Imported return date: Next Sunday',
+    });
   });
 });
 
@@ -329,5 +398,33 @@ describe('exportItemsToCSV & exportItemsToJSON', () => {
     expect(parsed.items[0].qty).toBe(0);
     expect(parsed.history).toHaveLength(1);
     expect(parsed.stats).toEqual({ totalItems: 1, totalUnits: 0 });
+  });
+
+  it('prefers checked_at over stale UTC dateChecked when exporting CSV and falls back for legacy null checked_at', () => {
+    const localMorning = new Date(2026, 10, 15, 2, 0, 0);
+    const csv = exportItemsToCSV(
+      [
+        {
+          ...sampleItems[0],
+          id: 'item-tz',
+          dateChecked: 'November 14, 2026',
+          checked_at: localMorning.toISOString(),
+        },
+        {
+          ...sampleItems[0],
+          id: 'item-legacy',
+          item: 'Legacy Drum',
+          dateChecked: 'Legacy Spring 2024',
+          checked_at: null,
+        },
+      ],
+      [],
+      [],
+      { download: false }
+    );
+
+    const parsedRows = mapCsvRowsByHeader(parseCSV(csv));
+    expect(parsedRows[0].dateChecked).toBe('November 15, 2026');
+    expect(parsedRows[1].dateChecked).toBe('Legacy Spring 2024');
   });
 });

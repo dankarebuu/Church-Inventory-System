@@ -302,10 +302,13 @@ async function fetchInventoryItems(role: UserRole): Promise<EnrichedInventoryIte
   return sortInventoryItems(enriched);
 }
 
+export const GUEST_INVENTORY_REFETCH_INTERVAL_MS = 60_000;
+
 /**
  * Role-aware inventory query hook.
  * Guests query ONLY `inventory_public` (zero access to `inventory` or `loans`),
- * while Members and Admins query non-deleted `inventory` + active `loans`.
+ * refreshing on window focus and every 60s since Guests do not subscribe to
+ * `inventory` Realtime updates after the Phase 2 RLS lockdown.
  */
 export function useInventoryItems(role: UserRole) {
   return useQuery<EnrichedInventoryItem[], Error>({
@@ -313,6 +316,8 @@ export function useInventoryItems(role: UserRole) {
     queryFn: () => fetchInventoryItems(role),
     enabled: isSupabaseConfigured,
     initialData: isSupabaseConfigured ? undefined : EMPTY_INVENTORY,
+    refetchOnWindowFocus: role === 'guest',
+    refetchInterval: role === 'guest' ? GUEST_INVENTORY_REFETCH_INTERVAL_MS : false,
   });
 }
 
@@ -333,6 +338,7 @@ export function useItemMutations() {
   const invalidateInventoryAndHistory = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans }),
       queryClient.invalidateQueries({ queryKey: queryKeys.history }),
     ]);
   }, [queryClient, role]);
@@ -456,6 +462,7 @@ export function useItemMutations() {
           .from('history_log')
           .insert([historyEntry]);
         if (historyError) {
+          await invalidateInventoryAndHistory();
           throw new Error(historyError.message);
         }
 
@@ -508,6 +515,7 @@ export function useItemMutations() {
         .from('history_log')
         .insert([historyEntry]);
       if (historyError) {
+        await invalidateInventoryAndHistory();
         throw new Error(historyError.message);
       }
 
@@ -526,6 +534,32 @@ export function useItemMutations() {
       }
 
       const itemId = typeof target === 'string' ? target : target.id;
+      const hasSnapshotLoan =
+        isSnapshotItem(target) &&
+        (('qty_on_loan' in target && target.qty_on_loan > 0) ||
+          ('activeLoans' in target &&
+            Array.isArray(target.activeLoans) &&
+            target.activeLoans.some((loan) => loan.returned_at == null)));
+
+      if (hasSnapshotLoan) {
+        throw new Error('Return all active loans before moving this item to Trash.');
+      }
+
+      const { data: activeLoansForItem, error: activeLoansError } = await supabase
+        .from('loans')
+        .select('id')
+        .eq('item_id', itemId)
+        .is('returned_at', null)
+        .limit(1);
+
+      if (activeLoansError) {
+        throw new Error(activeLoansError.message);
+      }
+
+      if ((activeLoansForItem ?? []).length > 0) {
+        throw new Error('Return all active loans before moving this item to Trash.');
+      }
+
       const deletedAt = new Date().toISOString();
       const actorEmail = user?.email ?? profile?.email ?? 'unknown';
 
@@ -558,6 +592,7 @@ export function useItemMutations() {
         .from('history_log')
         .insert([historyEntry]);
       if (historyError) {
+        await invalidateInventoryAndHistory();
         throw new Error(historyError.message);
       }
 

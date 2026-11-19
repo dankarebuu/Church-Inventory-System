@@ -1,7 +1,13 @@
 import { AlertTriangle, CheckCircle2, Wrench, type LucideIcon } from 'lucide-react';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { isLoanOverdue } from '@/features/loans/schemas';
-import type { Category, ItemCondition, LocationRecord } from '@/types/database';
+import { formatDisplayDate, trimOrNull } from '@/lib/utils';
+import type {
+  Category,
+  ItemCondition,
+  LocationRecord,
+  PublicInventoryItem,
+} from '@/types/database';
 
 export interface ConditionDisplayMeta {
   label: string;
@@ -91,6 +97,12 @@ export function resolveLocationName(
     if (matched) return matched.name;
   }
   return item.location?.trim() || '—';
+}
+
+export function formatLastCheckedDate(
+  item: Pick<PublicInventoryItem, 'checked_at' | 'dateChecked'>
+): string {
+  return formatDisplayDate(trimOrNull(item.checked_at) ?? item.dateChecked);
 }
 
 export function isLoanDateOverdue(

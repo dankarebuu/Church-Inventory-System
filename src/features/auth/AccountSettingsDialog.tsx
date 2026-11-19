@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -59,22 +59,42 @@ export function AccountSettingsDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const wasOpenRef = useRef(false);
+  const initializedUserIdRef = useRef<string | null>(null);
+  const latestAuthContextRef = useRef({ profile, user });
+  latestAuthContextRef.current = { profile, user };
+  const currentUserId = profile?.id ?? user?.id ?? null;
+
   useEffect(() => {
     if (!open) {
-      setNewPassword('');
-      setConfirmPassword('');
-      setErrorMessage(null);
-      setIsSubmitting(false);
+      if (wasOpenRef.current) {
+        setNewPassword('');
+        setConfirmPassword('');
+        setErrorMessage(null);
+        setIsSubmitting(false);
+      }
+      wasOpenRef.current = false;
+      initializedUserIdRef.current = null;
       return;
     }
 
-    const initial = deriveInitialNames(profile, user);
+    const isOpening = !wasOpenRef.current;
+    const userChanged = currentUserId !== initializedUserIdRef.current;
+    if (!isOpening && !userChanged) {
+      return;
+    }
+
+    wasOpenRef.current = true;
+    initializedUserIdRef.current = currentUserId;
+
+    const { profile: latestProfile, user: latestUser } = latestAuthContextRef.current;
+    const initial = deriveInitialNames(latestProfile, latestUser);
     setFirstName(initial.firstName);
     setLastName(initial.lastName);
     setNewPassword('');
     setConfirmPassword('');
     setErrorMessage(null);
-  }, [open, profile, user]);
+  }, [open, currentUserId]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -132,6 +152,12 @@ export function AccountSettingsDialog({
       await refreshProfile();
       toast.success('Account settings updated!');
       onOpenChange(false);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Unable to update account settings. Please try again.';
+      setErrorMessage(message);
     } finally {
       setIsSubmitting(false);
     }

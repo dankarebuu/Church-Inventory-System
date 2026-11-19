@@ -287,4 +287,22 @@ describe('AppShell', () => {
     await user.keyboard('{Control>}k{/Control}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  it('displays Catalog Sync label and refresh tooltip for online Guests while showing Live Sync for staff', () => {
+    mockIsConfigured.value = true;
+    const { unmount } = renderShell('guest');
+
+    const guestPill = screen.getByRole('status', { name: /Realtime sync: Catalog Sync/i });
+    expect(guestPill).toBeInTheDocument();
+    expect(guestPill).toHaveAttribute(
+      'title',
+      expect.stringMatching(/tab focus.*60s/i)
+    );
+    unmount();
+
+    renderShell('member');
+    const memberPill = screen.getByRole('status', { name: /Realtime sync: Live Sync/i });
+    expect(memberPill).toBeInTheDocument();
+    expect(memberPill).toHaveAttribute('title', expect.stringMatching(/live realtime/i));
+  });
 });

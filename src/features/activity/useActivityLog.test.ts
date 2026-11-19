@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '@/lib/queryKeys';
 import type { HistoryEntry, InventoryItem, UserRole } from '@/types/database';
-import { useActivityLog } from './useActivityLog';
+import { describeHistoryEntry, useActivityLog } from './useActivityLog';
 
 const {
   mockIsConfigured,
@@ -74,13 +74,27 @@ const {
     });
 
     const updateFn = vi.fn((payload: Record<string, unknown>) => ({
-      eq: vi.fn(async (col: string, id: unknown) => {
+      eq: vi.fn((col: string, id: unknown) => {
         updates.push({ table, payload, col, id });
-        return getResult();
+        const resultPromise = Promise.resolve(getResult());
+        return {
+          is: vi.fn(async () => getResult()),
+          then: (
+            onFulfilled: (value: TableResult) => unknown,
+            onRejected?: (reason: unknown) => unknown
+          ) => resultPromise.then(onFulfilled, onRejected),
+        };
       }),
-      in: vi.fn(async (col: string, ids: unknown[]) => {
+      in: vi.fn((col: string, ids: unknown[]) => {
         updatesIn.push({ table, payload, col, ids });
-        return getResult();
+        const resultPromise = Promise.resolve(getResult());
+        return {
+          is: vi.fn(async () => getResult()),
+          then: (
+            onFulfilled: (value: TableResult) => unknown,
+            onRejected?: (reason: unknown) => unknown
+          ) => resultPromise.then(onFulfilled, onRejected),
+        };
       }),
     }));
 
@@ -383,11 +397,13 @@ describe('useActivityLog', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
   });
 
-  it('undoHistoryEntry reverses import entries cleanly by soft-deleting insertedIds and reverting updatedItems without server columns', async () => {
+  it('undoHistoryEntry reverses import entries cleanly by closing active loans on insertedIds, soft-deleting insertedIds, reverting updatedItems, and invalidating loans', async () => {
     mockAuthState.role = 'admin';
     tableResults.set('history_log', { data: [], error: null });
     tableResults.set('inventory', { data: null, error: null });
+    tableResults.set('loans', { data: null, error: null });
     const queryClient = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
 
     const { result } = renderHook(() => useActivityLog(true), {
       wrapper: createWrapper(queryClient),
@@ -419,10 +435,17 @@ describe('useActivityLog', () => {
       await result.current.undoHistoryEntry(importEntry);
     });
 
-    expect(updateInCalls).toHaveLength(1);
-    expect(updateInCalls[0].table).toBe('inventory');
-    expect(updateInCalls[0].ids).toEqual(['item_new_1', 'item_new_2']);
-    expect(typeof updateInCalls[0].payload.deleted_at).toBe('string');
+    const loanCloseIn = updateInCalls.find((call) => call.table === 'loans');
+    expect(loanCloseIn).toBeDefined();
+    expect(loanCloseIn?.col).toBe('item_id');
+    expect(loanCloseIn?.ids).toEqual(['item_new_1', 'item_new_2']);
+    expect(typeof loanCloseIn?.payload.returned_at).toBe('string');
+    expect(loanCloseIn?.payload.returned_by).toBe('Dan Caleb');
+
+    const invDelIn = updateInCalls.find((call) => call.table === 'inventory');
+    expect(invDelIn).toBeDefined();
+    expect(invDelIn?.ids).toEqual(['item_new_1', 'item_new_2']);
+    expect(typeof invDelIn?.payload.deleted_at).toBe('string');
 
     const revertedOld = updateCalls.find(
       (call) => call.table === 'inventory' && call.id === 'item_old_1'
@@ -433,13 +456,19 @@ describe('useActivityLog', () => {
     });
     expect('id' in (revertedOld?.payload ?? {})).toBe(false);
     expect('updated_at' in (revertedOld?.payload ?? {})).toBe(false);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
   });
 
-  it('undoHistoryEntry reverses added entries by soft-deleting the item and logging deleted', async () => {
+  it('undoHistoryEntry reverses added entries by closing active loans on item_id, soft-deleting the item, logging deleted, and invalidating loans', async () => {
     mockAuthState.role = 'admin';
     tableResults.set('history_log', { data: [], error: null });
     tableResults.set('inventory', { data: null, error: null });
+    tableResults.set('loans', { data: null, error: null });
     const queryClient = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
 
     const { result } = renderHook(() => useActivityLog(true), {
       wrapper: createWrapper(queryClient),
@@ -463,6 +492,14 @@ describe('useActivityLog', () => {
       await result.current.undoHistoryEntry(addedEntry);
     });
 
+    const loanClose = updateCalls.find(
+      (call) => call.table === 'loans' && call.id === 'item_added_1'
+    );
+    expect(loanClose).toBeDefined();
+    expect(loanClose?.col).toBe('item_id');
+    expect(typeof loanClose?.payload.returned_at).toBe('string');
+    expect(loanClose?.payload.returned_by).toBe('Dan Caleb');
+
     const invUpdate = updateCalls.find(
       (call) => call.table === 'inventory' && call.id === 'item_added_1'
     );
@@ -472,6 +509,10 @@ describe('useActivityLog', () => {
     const row = (histInsert?.payload as Array<Record<string, unknown>>)[0];
     expect(row.action).toBe('deleted');
     expect(row.item_id).toBe('item_added_1');
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
   });
 
   it('undoHistoryEntry reverses checked entries safely stripping server columns', async () => {
@@ -519,5 +560,23 @@ describe('useActivityLog', () => {
     expect('id' in (invUpdate?.payload ?? {})).toBe(false);
     expect('created_at' in (invUpdate?.payload ?? {})).toBe(false);
     expect('updated_at' in (invUpdate?.payload ?? {})).toBe(false);
+  });
+
+  it('describeHistoryEntry returns safe fallback descriptions for unknown or null legacy action values', () => {
+    expect(
+      describeHistoryEntry(
+        makeHistoryEntry({
+          action: 'legacy_edit' as unknown as HistoryEntry['action'],
+        })
+      )
+    ).toBe('Recorded legacy_edit action');
+
+    expect(
+      describeHistoryEntry(
+        makeHistoryEntry({
+          action: null as unknown as HistoryEntry['action'],
+        })
+      )
+    ).toBe('Recorded activity action');
   });
 });

@@ -653,4 +653,61 @@ describe('DashboardPage', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent(/loading operations dashboard/i);
   });
+
+  it('renders legacy outlier history actions and unexpected item condition values safely without crashing', () => {
+    const outlierItems: EnrichedInventoryItem[] = [
+      ...makeSampleItems('member'),
+      {
+        id: 'item-outlier-cond',
+        category: 'Drums',
+        category_id: 'cat-drums',
+        subcategory_id: null,
+        item: 'Legacy Pedal',
+        brand: 'DW',
+        qty: 1,
+        condition: 'broken' as EnrichedInventoryItem['condition'],
+        owner: 'Church Property',
+        location: 'Stage',
+        location_id: 'loc-stage',
+        serial: null,
+        description: null,
+        image_filename: null,
+        remarks: 'Legacy outlier condition',
+        dateChecked: 'November 18, 2026',
+        checked_at: '2026-11-18T09:00:00.000Z',
+        checkedBy: 'Dan Caleb',
+        qty_on_loan: 0,
+        available_qty: 1,
+        activeLoans: [],
+      },
+    ];
+
+    const outlierHistory: HistoryEntry[] = [
+      {
+        id: 'h-outlier',
+        action: 'legacy_edit' as HistoryEntry['action'],
+        item_id: 'item-outlier-cond',
+        item_data: { id: 'item-outlier-cond', item: 'Legacy Pedal' },
+        prev_data: null,
+        user_email: 'legacy@wingmacc.org',
+        undone: false,
+        timestamp: '2026-11-18T12:00:00.000Z',
+      },
+    ];
+
+    renderDashboard({
+      role: 'member',
+      items: outlierItems,
+      history: outlierHistory,
+      loans: [],
+    });
+
+    const attentionPanel = screen.getByTestId('dashboard-needs-attention');
+    expect(within(attentionPanel).getByText('Legacy Pedal')).toBeInTheDocument();
+    expect(within(attentionPanel).getByText('Broken')).toBeInTheDocument();
+
+    const activityPanel = screen.getByTestId('dashboard-recent-activity');
+    expect(within(activityPanel).getByText('Legacy_edit')).toBeInTheDocument();
+    expect(within(activityPanel).getByText('Recorded legacy_edit action')).toBeInTheDocument();
+  });
 });

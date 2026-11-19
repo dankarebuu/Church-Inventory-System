@@ -84,6 +84,25 @@ const ACTION_META: Record<HistoryAction, ActionDisplayMeta> = {
   },
 };
 
+const FALLBACK_ACTION_META: ActionDisplayMeta = {
+  label: 'Activity',
+  icon: History,
+  badgeVariant: 'outline',
+};
+
+function getActionMeta(action: string | null | undefined): ActionDisplayMeta {
+  if (typeof action === 'string' && Object.prototype.hasOwnProperty.call(ACTION_META, action)) {
+    return ACTION_META[action as HistoryAction];
+  }
+  const formatted = typeof action === 'string' && action.trim() ? action.trim() : null;
+  return formatted
+    ? {
+        ...FALLBACK_ACTION_META,
+        label: formatted.charAt(0).toUpperCase() + formatted.slice(1),
+      }
+    : FALLBACK_ACTION_META;
+}
+
 const ACTION_FILTER_OPTIONS: ReadonlyArray<{ value: HistoryAction; label: string }> = [
   { value: 'added', label: 'Added' },
   { value: 'updated', label: 'Updated' },
@@ -338,7 +357,7 @@ export function ActivityPage() {
       ) : (
         <div className="space-y-3">
           {filteredEntries.map((entry) => {
-            const meta = ACTION_META[entry.action];
+            const meta = getActionMeta(entry.action);
             const ActionIcon = meta.icon;
             const itemName = resolveHistoryItemName(entry);
             const description = describeHistoryEntry(entry);

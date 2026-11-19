@@ -33,6 +33,7 @@ import type {
 } from '@/types/database';
 import {
   CONDITION_META,
+  formatLastCheckedDate,
   resolveCategoryName,
   resolveLocationName,
   resolveSubcategoryName,
@@ -243,7 +244,7 @@ export function ItemDetailDrawer({
                 {item.checkedBy && (
                   <span className="font-mono text-[11px] text-muted-foreground">
                     Checked by {item.checkedBy} ·{' '}
-                    {formatDisplayDate(item.dateChecked ?? item.checked_at)}
+                    {formatLastCheckedDate(item)}
                   </span>
                 )}
               </div>
@@ -287,7 +288,7 @@ export function ItemDetailDrawer({
                   Last Checked
                 </dt>
                 <dd className="mt-0.5 font-medium text-foreground">
-                  {formatDisplayDate(item.dateChecked ?? item.checked_at)}
+                  {formatLastCheckedDate(item)}
                 </dd>
               </div>
               {item.description && (

@@ -141,7 +141,13 @@ const HEADER_FIELD_SPECS: readonly HeaderFieldSpec[] = [
   },
 ];
 
-const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const YMD_SLASH_OR_DASH_PATTERN = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/;
+const MDY_SLASH_OR_DASH_PATTERN = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/;
+const ISO_TIMESTAMP_PREFIX_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T/;
+const NUMERIC_ONLY_PATTERN = /^[+-]?\d+(?:\.\d+)?$/;
+const FOUR_DIGIT_YEAR_PATTERN = /\b\d{4}\b/;
+const NAMED_MONTH_DAY_YEAR_PATTERN = /^[A-Za-z]+\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/i;
+const DAY_NAMED_MONTH_YEAR_PATTERN = /^(\d{1,2})(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s+(\d{4})$/i;
 
 function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
@@ -162,19 +168,22 @@ function formatLocalYmd(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-function isValidYmdDate(value: string): boolean {
-  const match = DATE_ONLY_PATTERN.exec(value);
-  if (!match) return false;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+function makeValidatedLocalDate(year: number, month: number, day: number): Date | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return null;
+  }
+  if (year < 1000 || year > 9999 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
   const parsed = new Date(year, month - 1, day);
-  return (
-    parsed.getFullYear() === year &&
-    parsed.getMonth() === month - 1 &&
-    parsed.getDate() === day
-  );
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
 }
 
 /**
@@ -276,11 +285,15 @@ function resolveHeaderColumnMap(
   const columnMap: Partial<Record<ImportFieldKey, number>> = {};
   const claimedColumns = new Set<number>();
 
-  // Pass 1: exact alias matching so specific headers (e.g. Subcategory, Return Date) bind first.
+  // Pass 1: exact alias matching in priority order so e.g. "Equipment"/"Item" wins over generic "Name".
   for (const spec of HEADER_FIELD_SPECS) {
-    const idx = normalizedHeaders.findIndex(
-      (header, colIdx) => !claimedColumns.has(colIdx) && spec.exactAliases.includes(header)
-    );
+    let idx = -1;
+    for (const alias of spec.exactAliases) {
+      idx = normalizedHeaders.findIndex(
+        (header, colIdx) => !claimedColumns.has(colIdx) && header === alias
+      );
+      if (idx !== -1) break;
+    }
     if (idx !== -1) {
       columnMap[spec.field] = idx;
       claimedColumns.add(idx);
@@ -550,19 +563,71 @@ export function normalizeImportDueDate(raw?: string | null): {
     return { dueDate: null, unparsedNote: null };
   }
 
-  if (isValidYmdDate(trimmed)) {
-    return { dueDate: trimmed, unparsedNote: null };
-  }
-
-  const parsed = new Date(trimmed);
-  if (!Number.isNaN(parsed.getTime())) {
-    return { dueDate: formatLocalYmd(parsed), unparsedNote: null };
-  }
-
-  return {
+  const unparsedResult = {
     dueDate: null,
     unparsedNote: `Imported return date: ${trimmed}`,
   };
+
+  if (NUMERIC_ONLY_PATTERN.test(trimmed)) {
+    return unparsedResult;
+  }
+
+  const ymdMatch = YMD_SLASH_OR_DASH_PATTERN.exec(trimmed);
+  if (ymdMatch) {
+    const validDate = makeValidatedLocalDate(
+      Number(ymdMatch[1]),
+      Number(ymdMatch[2]),
+      Number(ymdMatch[3])
+    );
+    return validDate
+      ? { dueDate: formatLocalYmd(validDate), unparsedNote: null }
+      : unparsedResult;
+  }
+
+  const mdyMatch = MDY_SLASH_OR_DASH_PATTERN.exec(trimmed);
+  if (mdyMatch) {
+    const validDate = makeValidatedLocalDate(
+      Number(mdyMatch[3]),
+      Number(mdyMatch[1]),
+      Number(mdyMatch[2])
+    );
+    return validDate
+      ? { dueDate: formatLocalYmd(validDate), unparsedNote: null }
+      : unparsedResult;
+  }
+
+  const isoMatch = ISO_TIMESTAMP_PREFIX_PATTERN.exec(trimmed);
+  if (isoMatch) {
+    if (!makeValidatedLocalDate(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]))) {
+      return unparsedResult;
+    }
+    const parsedIso = new Date(trimmed);
+    return !Number.isNaN(parsedIso.getTime())
+      ? { dueDate: formatLocalYmd(parsedIso), unparsedNote: null }
+      : unparsedResult;
+  }
+
+  if (!FOUR_DIGIT_YEAR_PATTERN.test(trimmed)) {
+    return unparsedResult;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return unparsedResult;
+  }
+
+  const namedMatch =
+    NAMED_MONTH_DAY_YEAR_PATTERN.exec(trimmed) ??
+    DAY_NAMED_MONTH_YEAR_PATTERN.exec(trimmed);
+  if (namedMatch) {
+    const expectedDay = Number(namedMatch[1]);
+    const expectedYear = Number(namedMatch[2]);
+    if (parsed.getDate() !== expectedDay || parsed.getFullYear() !== expectedYear) {
+      return unparsedResult;
+    }
+  }
+
+  return { dueDate: formatLocalYmd(parsed), unparsedNote: null };
 }
 
 function triggerBrowserDownload(
@@ -655,9 +720,10 @@ export function exportItemsToCSV(
       .join('; ');
     const safeQty = Number.isFinite(item.qty) ? Math.max(item.qty, 0) : 0;
     const subName = resolveSubcategoryName(item, categories) ?? '';
-    const dateChecked =
-      trimOrNull(item.dateChecked) ??
-      (item.checked_at ? formatDisplayDate(item.checked_at) : '');
+    const checkedAtIso = trimOrNull(item.checked_at);
+    const dateChecked = checkedAtIso
+      ? formatDisplayDate(checkedAtIso)
+      : (trimOrNull(item.dateChecked) ?? '');
 
     return [
       item.category,

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
@@ -7,14 +8,51 @@ import { Toaster } from '@/components/ui/sonner';
 import { AuthModal } from '@/features/auth/AuthModal';
 import { AuthProvider } from '@/features/auth/useAuth';
 import { WelcomeGateway } from '@/features/auth/WelcomeGateway';
-import { ActivityPage } from '@/pages/ActivityPage';
-import { CategoriesPage } from '@/pages/CategoriesPage';
-import { ChecklistPage } from '@/pages/ChecklistPage';
-import { DashboardPage } from '@/pages/DashboardPage';
-import { InventoryPage } from '@/pages/InventoryPage';
-import { LoansPage } from '@/pages/LoansPage';
-import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
-import { TeamPage } from '@/pages/TeamPage';
+
+const ActivityPage = lazy(() =>
+  import('@/pages/ActivityPage').then((m) => ({ default: m.ActivityPage }))
+);
+const CategoriesPage = lazy(() =>
+  import('@/pages/CategoriesPage').then((m) => ({ default: m.CategoriesPage }))
+);
+const ChecklistPage = lazy(() =>
+  import('@/pages/ChecklistPage').then((m) => ({ default: m.ChecklistPage }))
+);
+const DashboardPage = lazy(() =>
+  import('@/pages/DashboardPage').then((m) => ({ default: m.DashboardPage }))
+);
+const InventoryPage = lazy(() =>
+  import('@/pages/InventoryPage').then((m) => ({ default: m.InventoryPage }))
+);
+const LoansPage = lazy(() =>
+  import('@/pages/LoansPage').then((m) => ({ default: m.LoansPage }))
+);
+const ResetPasswordPage = lazy(() =>
+  import('@/pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage }))
+);
+const TeamPage = lazy(() =>
+  import('@/pages/TeamPage').then((m) => ({ default: m.TeamPage }))
+);
+
+function RouteLoadingFallback() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      className="flex min-h-[40vh] items-center justify-center p-6"
+    >
+      <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card">
+        <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
+        <span>Loading view...</span>
+      </div>
+    </div>
+  );
+}
+
+function LazyRoute({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<RouteLoadingFallback />}>{children}</Suspense>;
+}
 
 export function createAppQueryClient(): QueryClient {
   return new QueryClient({
@@ -32,18 +70,55 @@ export function AppRoutes() {
   return (
     <>
       <Routes>
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route
+          path="/reset-password"
+          element={
+            <LazyRoute>
+              <ResetPasswordPage />
+            </LazyRoute>
+          }
+        />
         <Route element={<AppShell />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/inventory" element={<InventoryPage />} />
-          <Route path="/categories" element={<CategoriesPage />} />
-          <Route path="/checklist" element={<ChecklistPage />} />
+          <Route
+            path="/dashboard"
+            element={
+              <LazyRoute>
+                <DashboardPage />
+              </LazyRoute>
+            }
+          />
+          <Route
+            path="/inventory"
+            element={
+              <LazyRoute>
+                <InventoryPage />
+              </LazyRoute>
+            }
+          />
+          <Route
+            path="/categories"
+            element={
+              <LazyRoute>
+                <CategoriesPage />
+              </LazyRoute>
+            }
+          />
+          <Route
+            path="/checklist"
+            element={
+              <LazyRoute>
+                <ChecklistPage />
+              </LazyRoute>
+            }
+          />
           <Route
             path="/loans"
             element={
               <ProtectedRoute allowedRoles={['member', 'admin']}>
-                <LoansPage />
+                <LazyRoute>
+                  <LoansPage />
+                </LazyRoute>
               </ProtectedRoute>
             }
           />
@@ -51,7 +126,9 @@ export function AppRoutes() {
             path="/activity"
             element={
               <ProtectedRoute allowedRoles={['member', 'admin']}>
-                <ActivityPage />
+                <LazyRoute>
+                  <ActivityPage />
+                </LazyRoute>
               </ProtectedRoute>
             }
           />
@@ -59,7 +136,9 @@ export function AppRoutes() {
             path="/team"
             element={
               <ProtectedRoute allowedRoles={['admin']}>
-                <TeamPage />
+                <LazyRoute>
+                  <TeamPage />
+                </LazyRoute>
               </ProtectedRoute>
             }
           />

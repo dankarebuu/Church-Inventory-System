@@ -44,6 +44,7 @@ import {
 } from '@/features/checklist/checklistUtils';
 import {
   CONDITION_META,
+  formatLastCheckedDate,
   resolveLocationName,
   resolveSubcategoryName,
 } from '@/features/inventory/inventoryUi';
@@ -54,7 +55,7 @@ import {
   type EnrichedInventoryItem,
 } from '@/features/inventory/useInventory';
 import { sortLocations, useLocations } from '@/features/locations/useLocations';
-import { cn, formatDisplayDate } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import type { Category, ItemCondition, LocationRecord } from '@/types/database';
 
 type ChecklistTab = 'live' | 'print';
@@ -437,7 +438,7 @@ function LiveChecklistGroups({
 
                       <p className="truncate font-mono text-[11px] text-muted-foreground">
                         {item.checkedBy || item.dateChecked || item.checked_at
-                          ? `Last check: ${formatDisplayDate(item.dateChecked ?? item.checked_at)}${
+                          ? `Last check: ${formatLastCheckedDate(item)}${
                               item.checkedBy ? ` · ${item.checkedBy}` : ''
                             }`
                           : 'Not checked yet'}

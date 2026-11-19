@@ -124,7 +124,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.inventory TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON public.categories TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON public.locations TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.loans TO authenticated;
-GRANT SELECT, INSERT, UPDATE ON public.history_log TO authenticated;
+GRANT SELECT, INSERT, UPDATE (undone) ON public.history_log TO authenticated;
 GRANT SELECT, UPDATE (role) ON public.profiles TO authenticated;
 
 GRANT EXECUTE ON FUNCTION public.current_user_role() TO anon, authenticated;

@@ -554,4 +554,41 @@ describe('ChecklistPage', () => {
       expect(screen.getByRole('button', { name: /download pdf/i })).not.toBeDisabled();
     });
   });
+
+  it('prefers local checked_at over stale UTC dateChecked in ChecklistPage Live Check-Off cards', () => {
+    const localMorning = new Date(2026, 10, 15, 2, 0, 0);
+    mockUseAuth.mockReturnValue(makeAuthValue('member'));
+    mockUseCategories.mockReturnValue({ data: sampleCategories, isLoading: false });
+    mockUseLocations.mockReturnValue({ data: sampleLocations, isLoading: false });
+    mockUseInventoryItems.mockReturnValue({
+      data: [
+        {
+          ...makeSampleItems('member')[0],
+          dateChecked: 'November 14, 2026',
+          checked_at: localMorning.toISOString(),
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/checklist']}>
+          <Routes>
+            <Route path="/checklist" element={<ChecklistPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    expect(screen.getByText(/Last check: November 15, 2026/i)).toBeInTheDocument();
+    expect(screen.queryByText(/November 14, 2026/i)).not.toBeInTheDocument();
+  });
 });

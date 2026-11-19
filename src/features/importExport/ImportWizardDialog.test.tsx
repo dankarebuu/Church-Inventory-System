@@ -555,4 +555,195 @@ describe('ImportWizardDialog', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
   });
+
+  it('skips duplicate active loans when re-importing an exported CSV in update mode while creating genuinely new loans', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    const queryClient = createTestQueryClient();
+
+    const itemsWithLoans: EnrichedInventoryItem[] = [
+      {
+        id: 'item-snare',
+        category: 'Drums',
+        category_id: 'cat-drums',
+        subcategory_id: null,
+        item: 'Pearl Brass Snare',
+        brand: 'Pearl',
+        qty: 2,
+        condition: 'working',
+        owner: 'Church Property',
+        location: 'Stage',
+        location_id: 'loc-stage',
+        serial: 'SN-100',
+        description: null,
+        image_filename: null,
+        remarks: 'Old',
+        dateChecked: 'November 18, 2026',
+        checked_at: '2026-11-18T09:00:00.000Z',
+        checkedBy: 'Dan Caleb',
+        qty_on_loan: 1,
+        available_qty: 1,
+        activeLoans: [
+          {
+            id: 'loan-existing-1',
+            item_id: 'item-snare',
+            borrower_name: 'Joel Santos',
+            borrower_contact: null,
+            qty_loaned: 1,
+            checked_out_at: '2026-11-15T10:00:00.000Z',
+            due_date: '2026-11-25',
+            returned_at: null,
+            checked_out_by: 'Dan Caleb',
+            returned_by: null,
+            notes: null,
+          },
+        ],
+      },
+      {
+        id: 'item-mics',
+        category: 'Audio',
+        category_id: 'cat-audio',
+        subcategory_id: null,
+        item: 'Shure SM58',
+        brand: 'Shure',
+        qty: 4,
+        condition: 'working',
+        owner: 'Church Property',
+        location: 'Booth',
+        location_id: 'loc-booth',
+        serial: 'SM-200',
+        description: null,
+        image_filename: null,
+        remarks: 'OK',
+        dateChecked: 'November 18, 2026',
+        checked_at: '2026-11-18T09:00:00.000Z',
+        checkedBy: 'Dan Caleb',
+        qty_on_loan: 2,
+        available_qty: 2,
+        activeLoans: [
+          {
+            id: 'loan-existing-2',
+            item_id: 'item-mics',
+            borrower_name: 'Joel Santos',
+            borrower_contact: null,
+            qty_loaned: 1,
+            checked_out_at: '2026-11-15T10:00:00.000Z',
+            due_date: '2026-11-25',
+            returned_at: null,
+            checked_out_by: 'Dan Caleb',
+            returned_by: null,
+            notes: null,
+          },
+          {
+            id: 'loan-existing-3',
+            item_id: 'item-mics',
+            borrower_name: 'Mia Reyes',
+            borrower_contact: null,
+            qty_loaned: 1,
+            checked_out_at: '2026-11-16T10:00:00.000Z',
+            due_date: '2026-11-28',
+            returned_at: null,
+            checked_out_by: 'Dan Caleb',
+            returned_by: null,
+            notes: null,
+          },
+        ],
+      },
+      {
+        id: 'item-di',
+        category: 'Audio',
+        category_id: 'cat-audio',
+        subcategory_id: null,
+        item: 'Radial DI Box',
+        brand: 'Radial',
+        qty: 3,
+        condition: 'working',
+        owner: 'Church Property',
+        location: 'Stage',
+        location_id: 'loc-stage',
+        serial: 'DI-300',
+        description: null,
+        image_filename: null,
+        remarks: 'OK',
+        dateChecked: 'November 18, 2026',
+        checked_at: '2026-11-18T09:00:00.000Z',
+        checkedBy: 'Dan Caleb',
+        qty_on_loan: 1,
+        available_qty: 2,
+        activeLoans: [
+          {
+            id: 'loan-existing-4',
+            item_id: 'item-di',
+            borrower_name: 'Joel Santos',
+            borrower_contact: null,
+            qty_loaned: 1,
+            checked_out_at: '2026-11-15T10:00:00.000Z',
+            due_date: '2026-11-25',
+            returned_at: null,
+            checked_out_by: 'Dan Caleb',
+            returned_by: null,
+            notes: null,
+          },
+        ],
+      },
+    ];
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ImportWizardDialog
+          open={true}
+          onOpenChange={onOpenChange}
+          items={itemsWithLoans}
+          categories={[
+            ...sampleCategories,
+            {
+              id: 'cat-audio',
+              name: 'Audio',
+              parent_id: null,
+              color: '#3b82f6',
+              icon: 'mic',
+              sort_order: 20,
+              created_at: '2026-11-18T00:00:00.000Z',
+            },
+          ]}
+          locations={sampleLocations}
+        />
+      </QueryClientProvider>
+    );
+
+    const reimportedCsv = [
+      '"Equipment","Serial Number","Remarks","Borrower","Return Date"',
+      // 1. Exact single active loan match (case-insensitive) -> skipped
+      '"Pearl Brass Snare","SN-100","Updated remark","joel santos","2026-11-25"',
+      // 2. Multi-borrower joined summary from exportItemsToCSV -> skipped
+      '"Shure SM58","SM-200","Cleaned grilles","Joel Santos; Mia Reyes","2026-11-25; 2026-11-28"',
+      // 3. New borrower on DI Box -> created
+      '"Radial DI Box","DI-300","Updated DI","Eli Cruz","2026-12-01"',
+    ].join('\r\n');
+
+    const fileInput = screen.getByLabelText(/select csv or json file/i);
+    fireEvent.change(fileInput, {
+      target: { files: [new File([reimportedCsv], 'reimport.csv', { type: 'text/csv' })] },
+    });
+
+    expect(await screen.findByText('Pearl Brass Snare')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: /update existing matches/i }));
+
+    expect(await screen.findByText(/2 existing loans preserved/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 active loan to create/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /start import \(3\)/i }));
+
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    const loanInsert = insertCalls.find((c) => c.table === 'loans');
+    expect(loanInsert).toBeDefined();
+    const loanRows = loanInsert?.payload as Array<Record<string, unknown>>;
+    expect(loanRows).toHaveLength(1);
+    expect(loanRows[0].item_id).toBe('item-di');
+    expect(loanRows[0].borrower_name).toBe('Eli Cruz');
+    expect(loanRows[0].due_date).toBe('2026-12-01');
+  });
 });

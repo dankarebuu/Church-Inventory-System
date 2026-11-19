@@ -191,11 +191,20 @@ export function useLoanMutations() {
           returned_by: actorName,
         })
         .eq('id', loan.id)
+        .is('returned_at', null)
         .select('*')
-        .single();
+        .maybeSingle();
 
       if (updateError) {
         throw new Error(updateError.message);
+      }
+
+      if (!updatedLoan) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.loans }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) }),
+        ]);
+        throw new Error('This loan has already been returned.');
       }
 
       const historyPayload: LoanHistoryPayload = {
@@ -231,13 +240,7 @@ export function useLoanMutations() {
       }
 
       await invalidateLoanRelatedQueries();
-      return (
-        updatedLoan ?? {
-          ...loan,
-          returned_at: nowIso,
-          returned_by: actorName,
-        }
-      );
+      return updatedLoan;
     },
   });
 

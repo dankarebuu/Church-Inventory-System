@@ -228,10 +228,49 @@ describe('App & AppRoutes', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Sunday Checklist' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /print \/ pdf checklist/i })).toBeInTheDocument();
     });
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/checklist');
-    expect(screen.getByRole('tab', { name: /print \/ pdf checklist/i })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /live check-off/i })).not.toBeInTheDocument();
+  });
+
+  it('lazy-loads /inventory and /categories routes cleanly inside AppShell', async () => {
+    sessionStorage.setItem('wingmacc_gateway_dismissed', 'true');
+    const queryClient = createAppQueryClient();
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/inventory']}>
+          <AuthProvider>
+            <LocationDisplay />
+            <AppRoutes />
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Band Inventory' })).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('app-pathname')).toHaveTextContent('/inventory');
+    unmount();
+
+    const catQueryClient = createAppQueryClient();
+    render(
+      <QueryClientProvider client={catQueryClient}>
+        <MemoryRouter initialEntries={['/categories']}>
+          <AuthProvider>
+            <LocationDisplay />
+            <AppRoutes />
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /categories & locations/i })).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('app-pathname')).toHaveTextContent('/categories');
   });
 
   it('mounts ActivityPage at /activity for authenticated members while redirecting guests', async () => {

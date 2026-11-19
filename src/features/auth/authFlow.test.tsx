@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,9 +30,11 @@ const {
 
   return {
     mockGetSession: vi.fn(),
-    mockOnAuthStateChange: vi.fn(() => ({
-      data: { subscription: { unsubscribe: vi.fn() } },
-    })),
+    mockOnAuthStateChange: vi.fn(
+      (_cb?: (event: string, session: Session | null) => void) => ({
+        data: { subscription: { unsubscribe: vi.fn() } },
+      })
+    ),
     mockSignInWithPassword: vi.fn(),
     mockSignUp: vi.fn(),
     mockResetPasswordForEmail: vi.fn(),
@@ -399,5 +401,196 @@ describe('Auth UI flows (WelcomeGateway, AuthModal, AccountSettingsDialog, Reset
     expect(
       screen.getByText(/Supabase is not configured\. Add VITE_SUPABASE_URL/i)
     ).toBeInTheDocument();
+  });
+
+  it('preserves unsaved AccountSettingsDialog edits across background TOKEN_REFRESHED auth updates', async () => {
+    const user = userEvent.setup();
+    const authUser = makeUser();
+    const initialProfile: ProfileRecord = {
+      id: authUser.id,
+      email: 'dan@wingmacc.org',
+      first_name: 'Dan',
+      last_name: 'Caleb',
+      role: 'admin',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    const refreshedProfile: ProfileRecord = {
+      ...initialProfile,
+      first_name: 'ServerFirst',
+      last_name: 'ServerLast',
+    };
+
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(authUser) },
+      error: null,
+    });
+    mockMaybeSingle
+      .mockResolvedValueOnce({ data: initialProfile, error: null })
+      .mockResolvedValueOnce({ data: refreshedProfile, error: null });
+
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AuthProvider>
+          <Harness />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(mockMaybeSingle).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Trigger Account Settings' }));
+
+    const firstInput = screen.getByLabelText('First Name') as HTMLInputElement;
+    const lastInput = screen.getByLabelText('Last Name') as HTMLInputElement;
+    await user.clear(firstInput);
+    await user.type(firstInput, 'Daniel');
+    await user.clear(lastInput);
+    await user.type(lastInput, 'BandLead');
+    await user.type(screen.getByLabelText('New Password (Optional)'), 'draftpass123');
+    await user.type(screen.getByLabelText('Confirm New Password'), 'draftpass123');
+
+    const authListener = mockOnAuthStateChange.mock.calls[0]?.[0] as
+      | ((event: string, session: Session | null) => void)
+      | undefined;
+    expect(authListener).toBeDefined();
+
+    await act(async () => {
+      authListener?.(
+        'TOKEN_REFRESHED',
+        makeSession(makeUser({ user_metadata: { first_name: 'ServerFirst', last_name: 'ServerLast' } }))
+      );
+    });
+
+    await waitFor(() => {
+      expect(mockMaybeSingle).toHaveBeenCalledTimes(2);
+    });
+
+    expect((screen.getByLabelText('First Name') as HTMLInputElement).value).toBe('Daniel');
+    expect((screen.getByLabelText('Last Name') as HTMLInputElement).value).toBe('BandLead');
+    expect((screen.getByLabelText('New Password (Optional)') as HTMLInputElement).value).toBe(
+      'draftpass123'
+    );
+    expect((screen.getByLabelText('Confirm New Password') as HTMLInputElement).value).toBe(
+      'draftpass123'
+    );
+  });
+
+  it('dismisses WelcomeGateway when requesting a new reset link, detects signup_disabled code, and surfaces rejected network errors across auth forms', async () => {
+    const user = userEvent.setup();
+
+    // 1. Expired ResetPasswordPage -> Request New Reset Link dismisses WelcomeGateway and opens forgot modal cleanly
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/reset-password']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/dashboard" element={<Harness />} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /request new reset link/i })
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /request new reset link/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Reset Password' })).toBeInTheDocument();
+    });
+    expect(sessionStorage.getItem('wingmacc_gateway_dismissed')).toBe('true');
+    expect(
+      screen.queryByRole('button', { name: /continue as guest/i })
+    ).not.toBeInTheDocument();
+
+    // 2. Network rejections in AuthModal (forgot, login, signup) and code === 'signup_disabled'
+    mockResetPasswordForEmail.mockRejectedValueOnce(new Error('Reset network timeout'));
+    await user.type(screen.getByLabelText('Email Address'), 'member@wingmacc.org');
+    await user.click(screen.getByRole('button', { name: 'Send Reset Link' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/reset network timeout/i);
+
+    await user.click(screen.getByRole('button', { name: 'Back to Login' }));
+    mockSignInWithPassword.mockRejectedValueOnce(new Error('Login network error'));
+    await user.type(screen.getByLabelText('Password'), 'secret123');
+    await user.click(screen.getByRole('button', { name: 'Login' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/login network error/i);
+
+    await user.click(screen.getByRole('button', { name: 'Need an account? Sign up' }));
+    await user.type(screen.getByLabelText('First Name'), 'Dan');
+    await user.type(screen.getByLabelText('Last Name'), 'Caleb');
+    await user.type(screen.getByLabelText('Password'), 'secret123');
+
+    mockSignUp.mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: { message: 'User creation blocked', code: 'signup_disabled' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Sign Up' }));
+    expect(await screen.findByText(/Contact Admin: Dan Caleb/i)).toBeInTheDocument();
+
+    mockSignUp.mockRejectedValueOnce(new Error('Signup network down'));
+    await user.click(screen.getByRole('button', { name: 'Sign Up' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/signup network down/i);
+    unmount();
+
+    // 3. Network rejection in AccountSettingsDialog and ResetPasswordPage
+    const authUser = makeUser();
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(authUser) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValue({
+      data: {
+        id: authUser.id,
+        email: 'dan@wingmacc.org',
+        first_name: 'Dan',
+        last_name: 'Caleb',
+        role: 'member',
+        created_at: '2026-11-18T00:00:00.000Z',
+      },
+      error: null,
+    });
+
+    const { unmount: unmountSettings } = render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AuthProvider>
+          <Harness />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(mockMaybeSingle).toHaveBeenCalled();
+    });
+    await user.click(screen.getByRole('button', { name: 'Trigger Account Settings' }));
+    mockUpdateUser.mockRejectedValueOnce(new Error('Settings network failure'));
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/settings network failure/i);
+    expect(screen.getByRole('button', { name: 'Save Changes' })).not.toBeDisabled();
+    unmountSettings();
+
+    render(
+      <MemoryRouter initialEntries={['/reset-password']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('New Password')).toBeInTheDocument();
+    });
+    mockUpdateUser.mockRejectedValueOnce(new Error('Update password offline'));
+    await user.type(screen.getByLabelText('New Password'), 'bandpass99');
+    await user.type(screen.getByLabelText('Confirm Password'), 'bandpass99');
+    await user.click(screen.getByRole('button', { name: 'Update Password' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/update password offline/i);
+    expect(screen.getByRole('button', { name: 'Update Password' })).not.toBeDisabled();
   });
 });

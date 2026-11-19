@@ -4,7 +4,7 @@ import { useAuth } from '@/features/auth/useAuth';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { queryKeys } from '@/lib/queryKeys';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import { createHistoryId, trimOrNull } from '@/lib/utils';
+import { createHistoryId, deriveActorName, trimOrNull } from '@/lib/utils';
 import type {
   Database,
   HistoryEntry,
@@ -166,6 +166,14 @@ export function describeHistoryEntry(entry: HistoryEntry): string {
       }
       return changes.length > 0 ? changes.join(' · ') : 'Item details updated';
     }
+    default: {
+      const rawAction: unknown = entry.action;
+      const actionLabel =
+        typeof rawAction === 'string' && rawAction.trim()
+          ? rawAction.trim()
+          : 'activity';
+      return `Recorded ${actionLabel} action`;
+    }
   }
 }
 
@@ -223,6 +231,7 @@ export function useActivityLog(enabled: boolean) {
   const invalidateRelated = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans }),
       queryClient.invalidateQueries({ queryKey: queryKeys.history }),
     ]);
   }, [queryClient, role]);
@@ -316,6 +325,7 @@ export function useActivityLog(enabled: boolean) {
       }
 
       const nowIso = new Date().toISOString();
+      const actorName = deriveActorName(profile, user);
       const actorEmail = user?.email ?? profile?.email ?? 'unknown';
 
       if (entry.action === 'import') {
@@ -328,6 +338,18 @@ export function useActivityLog(enabled: boolean) {
           : [];
 
         if (insertedIds.length > 0) {
+          const { error: closeLoansErr } = await supabase
+            .from('loans')
+            .update({
+              returned_at: nowIso,
+              returned_by: actorName,
+            })
+            .in('item_id', insertedIds)
+            .is('returned_at', null);
+          if (closeLoansErr) {
+            throw new Error(closeLoansErr.message);
+          }
+
           const { error: delErr } = await supabase
             .from('inventory')
             .update({ deleted_at: nowIso })
@@ -366,6 +388,18 @@ export function useActivityLog(enabled: boolean) {
         const itemId = resolveTargetItemId(entry);
         if (!itemId) {
           throw new Error('Unable to identify the added item to undo.');
+        }
+
+        const { error: closeLoansErr } = await supabase
+          .from('loans')
+          .update({
+            returned_at: nowIso,
+            returned_by: actorName,
+          })
+          .eq('item_id', itemId)
+          .is('returned_at', null);
+        if (closeLoansErr) {
+          throw new Error(closeLoansErr.message);
         }
 
         const { error: softDelErr } = await supabase

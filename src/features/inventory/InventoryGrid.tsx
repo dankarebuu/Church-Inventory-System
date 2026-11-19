@@ -4,10 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getCategoryColor } from '@/features/categories/useCategories';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import { cn, formatDisplayDate, parseImages } from '@/lib/utils';
+import { cn, parseImages } from '@/lib/utils';
 import type { Category, ItemCondition, LocationRecord, UserRole } from '@/types/database';
 import {
   CONDITION_META,
+  formatLastCheckedDate,
   resolveCategoryName,
   resolveLocationName,
   resolveSubcategoryName,
@@ -223,12 +224,12 @@ export function InventoryGrid({
                           <div className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
                             {canCheck && item.checkedBy ? (
                               <span>
-                                Checked {formatDisplayDate(item.dateChecked ?? item.checked_at)} ·{' '}
+                                Checked {formatLastCheckedDate(item)} ·{' '}
                                 {item.checkedBy}
                               </span>
                             ) : (
                               <span>
-                                Checked {formatDisplayDate(item.dateChecked ?? item.checked_at)}
+                                Checked {formatLastCheckedDate(item)}
                               </span>
                             )}
                           </div>

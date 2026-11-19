@@ -191,4 +191,63 @@ describe('ActivityPage', () => {
       expect(mockUndoHistoryEntry).toHaveBeenCalledWith(sampleEntries[1]);
     });
   });
+
+  it('renders unknown or null legacy history_log actions safely without crashing', () => {
+    mockUseAuth.mockReturnValue(makeAuthValue('member'));
+    mockUseActivityLog.mockReturnValue({
+      entries: [
+        {
+          id: 'h_legacy_outlier',
+          action: 'legacy_edit' as HistoryEntry['action'],
+          item_id: 'item-legacy',
+          item_data: { id: 'item-legacy', item: 'Legacy Synth' },
+          prev_data: null,
+          user_email: 'legacy@wingmacc.org',
+          undone: false,
+          timestamp: '2026-11-18T07:00:00.000Z',
+        },
+        {
+          id: 'h_null_outlier',
+          action: null as unknown as HistoryEntry['action'],
+          item_id: null,
+          item_data: { item: 'Mystery Cable' },
+          prev_data: null,
+          user_email: 'legacy@wingmacc.org',
+          undone: false,
+          timestamp: '2026-11-18T06:00:00.000Z',
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      restoreDeletedItem: mockRestoreDeletedItem,
+      undoHistoryEntry: mockUndoHistoryEntry,
+      isRestoring: false,
+      isUndoing: false,
+      pendingEntryId: null,
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <ActivityPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    const legacyCard = screen.getByTestId('activity-entry-h_legacy_outlier');
+    expect(within(legacyCard).getByText('Legacy_edit')).toBeInTheDocument();
+    expect(within(legacyCard).getByText('Legacy Synth')).toBeInTheDocument();
+    expect(within(legacyCard).getByText('Recorded legacy_edit action')).toBeInTheDocument();
+
+    const nullCard = screen.getByTestId('activity-entry-h_null_outlier');
+    expect(within(nullCard).getByText('Activity')).toBeInTheDocument();
+    expect(within(nullCard).getByText('Mystery Cable')).toBeInTheDocument();
+    expect(within(nullCard).getByText('Recorded activity action')).toBeInTheDocument();
+  });
 });

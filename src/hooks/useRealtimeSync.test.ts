@@ -118,19 +118,26 @@ describe('useRealtimeSync', () => {
     expect(mockChannelFn).not.toHaveBeenCalled();
   });
 
-  it('subscribes guests ONLY to inventory, categories, and locations (never loans, history_log, or profiles)', () => {
+  it('subscribes guests ONLY to categories and locations (never inventory, loans, history_log, or profiles) and reports Catalog Sync', () => {
     const queryClient = new QueryClient();
 
-    renderHook(() => useRealtimeSync('guest'), {
+    const { result } = renderHook(() => useRealtimeSync('guest'), {
       wrapper: createWrapper(queryClient),
     });
 
     expect(mockChannelFn).toHaveBeenCalledTimes(1);
     const guestChannel = createdChannels[0];
-    expect(guestChannel.tables).toEqual(['inventory', 'categories', 'locations']);
+    expect(guestChannel.tables).toEqual(['categories', 'locations']);
+    expect(guestChannel.tables).not.toContain('inventory');
     expect(guestChannel.tables).not.toContain('loans');
     expect(guestChannel.tables).not.toContain('history_log');
     expect(guestChannel.tables).not.toContain('profiles');
+
+    act(() => {
+      guestChannel.subscribeCallback?.('SUBSCRIBED');
+    });
+    expect(result.current.status).toBe('connected');
+    expect(result.current.label).toBe('Catalog Sync');
   });
 
   it('subscribes members to loans and history_log without profiles, and admins to profiles too', () => {
@@ -163,24 +170,24 @@ describe('useRealtimeSync', () => {
     ]);
   });
 
-  it('coalesces multiple rapid inventory events within 250ms into a single invalidateQueries call', () => {
+  it('coalesces multiple rapid inventory events within 250ms for members and rapid categories events for guests', () => {
     vi.useFakeTimers();
     const queryClient = new QueryClient();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
 
-    renderHook(() => useRealtimeSync('guest'), {
+    const { unmount } = renderHook(() => useRealtimeSync('member'), {
       wrapper: createWrapper(queryClient),
     });
 
-    const channel = createdChannels[0];
+    const memberChannel = createdChannels[0];
 
-    emitTableEvent(channel, 'inventory');
+    emitTableEvent(memberChannel, 'inventory');
     vi.advanceTimersByTime(50);
-    emitTableEvent(channel, 'inventory');
+    emitTableEvent(memberChannel, 'inventory');
     vi.advanceTimersByTime(50);
-    emitTableEvent(channel, 'inventory');
+    emitTableEvent(memberChannel, 'inventory');
     vi.advanceTimersByTime(50);
-    emitTableEvent(channel, 'inventory');
+    emitTableEvent(memberChannel, 'inventory');
 
     expect(invalidateSpy).not.toHaveBeenCalled();
 
@@ -190,7 +197,25 @@ describe('useRealtimeSync', () => {
     vi.advanceTimersByTime(1);
     expect(invalidateSpy).toHaveBeenCalledTimes(1);
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.inventory('guest'),
+      queryKey: queryKeys.inventory('member'),
+    });
+
+    unmount();
+    invalidateSpy.mockClear();
+
+    renderHook(() => useRealtimeSync('guest'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    const guestChannel = createdChannels[1];
+    emitTableEvent(guestChannel, 'categories');
+    vi.advanceTimersByTime(50);
+    emitTableEvent(guestChannel, 'categories');
+    vi.advanceTimersByTime(250);
+
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.categories,
     });
   });
 
@@ -239,7 +264,7 @@ describe('useRealtimeSync', () => {
     );
 
     const guestChannel = createdChannels[0];
-    emitTableEvent(guestChannel, 'inventory');
+    emitTableEvent(guestChannel, 'categories');
 
     rerender({ role: 'member' });
     expect(mockRemoveChannelFn).toHaveBeenCalledTimes(1);

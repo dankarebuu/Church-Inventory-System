@@ -72,14 +72,19 @@ const {
     const updateFn = vi.fn((payload: Record<string, unknown>) => ({
       eq: vi.fn((col: string, id: unknown) => {
         updates.push({ table, payload, col, id });
-        return {
+        const resultBuilder = {
           select: vi.fn(() => ({
             single: vi.fn(async () => getResult()),
+            maybeSingle: vi.fn(async () => getResult()),
           })),
           then: (
             onFulfilled: (value: TableResult) => unknown,
             onRejected?: (reason: unknown) => unknown
           ) => Promise.resolve(getResult()).then(onFulfilled, onRejected),
+        };
+        return {
+          ...resultBuilder,
+          is: vi.fn(() => resultBuilder),
         };
       }),
     }));
@@ -373,5 +378,33 @@ describe('useLoanMutations', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
+  });
+
+  it('guards against concurrent returnLoan races when no unreturned row matches, invalidates loans/inventory, and skips duplicate history_log', async () => {
+    mockAuthState.role = 'member';
+    const loan = makeLoan({
+      id: 'loan-race-1',
+      item_id: 'item-snare',
+      returned_at: null,
+    });
+    tableResults.set('loans', {
+      data: null,
+      error: null,
+    });
+
+    const queryClient = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    const { result } = renderHook(() => useLoanMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(result.current.returnLoan(loan)).rejects.toThrow(
+      /already been returned/i
+    );
+
+    expect(insertCalls.filter((c) => c.table === 'history_log')).toHaveLength(0);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('member') });
   });
 });

@@ -12,6 +12,7 @@ import type {
   UserRole,
 } from '@/types/database';
 import {
+  GUEST_INVENTORY_REFETCH_INTERVAL_MS,
   enrichItemsWithLoans,
   useInventoryItems,
   useItemMutations,
@@ -61,7 +62,18 @@ const {
     const getResult = (): TableResult =>
       queryMap.get(table) ?? { data: [], error: null };
 
+    const eqChain = {
+      is: vi.fn(() => ({
+        limit: vi.fn(async () => getResult()),
+        then: (
+          onFulfilled: (value: TableResult) => unknown,
+          onRejected?: (reason: unknown) => unknown
+        ) => Promise.resolve(getResult()).then(onFulfilled, onRejected),
+      })),
+    };
+
     const selectBuilder = {
+      eq: vi.fn(() => eqChain),
       is: vi.fn(async () => getResult()),
       then: (
         onFulfilled: (value: TableResult) => unknown,
@@ -363,6 +375,67 @@ describe('useInventoryItems', () => {
 
     expect(result.current.error?.message).toContain('permission denied');
   });
+
+  it('enables refetchOnWindowFocus and 60s refetchInterval only for guest role', async () => {
+    tableQueries.set('inventory_public', {
+      data: [makePublicItem({ id: '1', item: 'Guest Mic' })],
+      error: null,
+    });
+
+    const queryClient = createTestQueryClient();
+    const { result: guestResult, unmount } = renderHook(
+      () => useInventoryItems('guest'),
+      { wrapper: createWrapper(queryClient) }
+    );
+
+    await waitFor(() => {
+      expect(guestResult.current.isSuccess).toBe(true);
+    });
+
+    const guestQuery = queryClient
+      .getQueryCache()
+      .find({ queryKey: queryKeys.inventory('guest') });
+    expect(guestQuery?.options).toEqual(
+      expect.objectContaining({
+        refetchOnWindowFocus: true,
+        refetchInterval: GUEST_INVENTORY_REFETCH_INTERVAL_MS,
+      })
+    );
+    expect(GUEST_INVENTORY_REFETCH_INTERVAL_MS).toBe(60_000);
+
+    // Triggering visibilitychange / window focus refreshes guest inventory_public automatically.
+    window.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => {
+      expect(mockFrom).toHaveBeenCalledTimes(2);
+    });
+    unmount();
+
+    mockFrom.mockClear();
+    tableQueries.set('inventory', {
+      data: [makeInventoryItem({ id: '2', item: 'Member Mic' })],
+      error: null,
+    });
+    tableQueries.set('loans', { data: [], error: null });
+
+    const { result: memberResult } = renderHook(
+      () => useInventoryItems('member'),
+      { wrapper: createWrapper(queryClient) }
+    );
+
+    await waitFor(() => {
+      expect(memberResult.current.isSuccess).toBe(true);
+    });
+
+    const memberQuery = queryClient
+      .getQueryCache()
+      .find({ queryKey: queryKeys.inventory('member') });
+    expect(memberQuery?.options).toEqual(
+      expect.objectContaining({
+        refetchOnWindowFocus: false,
+        refetchInterval: false,
+      })
+    );
+  });
 });
 
 describe('useItemMutations', () => {
@@ -470,6 +543,7 @@ describe('useItemMutations', () => {
     expect(histRow.user_email).toBe('dan@wingmacc.org');
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
   });
 
@@ -588,6 +662,7 @@ describe('useItemMutations', () => {
     expect('activeLoans' in prevData).toBe(false);
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
   });
 
@@ -734,6 +809,105 @@ describe('useItemMutations', () => {
     expect(histRow.item_id).toBe('item_del_1');
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
+  });
+
+  it('blocks soft-deleting an item with active loans (snapshot or DB) and invalidates caches on partial history_log failure', async () => {
+    mockAuthState.role = 'admin';
+    const queryClient = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    const { result } = renderHook(() => useItemMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    // 1. Snapshot guard: rejects when qty_on_loan > 0 without touching inventory
+    const itemWithLoan = {
+      ...makeInventoryItem({ id: 'item_on_loan' }),
+      qty_on_loan: 1,
+      available_qty: 2,
+      activeLoans: [makeLoan({ id: 'loan-active', item_id: 'item_on_loan' })],
+    };
+
+    await expect(result.current.softDeleteItem(itemWithLoan)).rejects.toThrow(
+      /return all active loans/i
+    );
+    expect(updateCalls).toHaveLength(0);
+
+    // 2. DB guard: rejects even with bare itemId string if active loans exist in Supabase
+    tableQueries.set('loans', {
+      data: [{ id: 'loan-db-active' }],
+      error: null,
+    });
+    await expect(result.current.softDeleteItem('item_db_loan')).rejects.toThrow(
+      /return all active loans/i
+    );
+    expect(updateCalls).toHaveLength(0);
+
+    // 3. Partial-failure cache invalidation when history_log insert fails after saveItem / softDeleteItem
+    tableQueries.set('loans', { data: [], error: null });
+    tableQueries.set('history_log', {
+      data: null,
+      error: { message: 'history_log write failed' },
+    });
+
+    await expect(
+      result.current.saveItem({
+        values: {
+          item: 'Committed Mic',
+          category: 'Audio',
+          category_id: 'cat-audio',
+          subcategory_id: null,
+          brand: 'Shure',
+          qty: 1,
+          condition: 'working',
+          owner: 'Church Property',
+          location: 'Stage',
+          location_id: 'loc-stage',
+          serial: '',
+          description: '',
+          remarks: '',
+        },
+      })
+    ).rejects.toThrow(/history_log write failed/i);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
+
+    invalidateSpy.mockClear();
+
+    await expect(
+      result.current.saveItem({
+        existingItem: makeInventoryItem({ id: 'item_upd_partial' }),
+        values: {
+          item: 'Updated Mic',
+          category: 'Drums',
+          category_id: 'cat-drums',
+          subcategory_id: 'sub-snare',
+          brand: 'Pearl',
+          qty: 3,
+          condition: 'working',
+          owner: 'Church Property',
+          location: 'Stage',
+          location_id: 'loc-stage',
+          serial: 'SN-100',
+          description: '',
+          remarks: '',
+        },
+      })
+    ).rejects.toThrow(/history_log write failed/i);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
+
+    invalidateSpy.mockClear();
+
+    await expect(
+      result.current.softDeleteItem(makeInventoryItem({ id: 'item_del_partial' }))
+    ).rejects.toThrow(/history_log write failed/i);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.loans });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
   });
 

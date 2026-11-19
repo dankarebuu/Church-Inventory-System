@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase';
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
-  const { user, isLoading, openAuthModal } = useAuth();
+  const { user, isLoading, dismissGateway, openAuthModal } = useAuth();
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -48,6 +48,12 @@ export function ResetPasswordPage() {
 
       toast.success('Password updated successfully!');
       navigate('/dashboard', { replace: true });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Unable to update password. Please try again.';
+      setErrorMessage(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -95,6 +101,7 @@ export function ResetPasswordPage() {
                 <Button
                   type="button"
                   onClick={() => {
+                    dismissGateway();
                     navigate('/dashboard', { replace: true });
                     openAuthModal('forgot');
                   }}

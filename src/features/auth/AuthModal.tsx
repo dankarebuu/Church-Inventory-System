@@ -40,8 +40,9 @@ const MODE_COPY: Record<AuthModalMode, { title: string; description: string }> =
   },
 };
 
-function isSignupRestrictedError(message: string): boolean {
-  const lower = message.toLowerCase();
+function isSignupRestrictedError(error: { message?: string; code?: string }): boolean {
+  if (error.code === 'signup_disabled') return true;
+  const lower = (error.message ?? '').toLowerCase();
   return lower.includes('signups not allowed') || lower.includes('disabled');
 }
 
@@ -150,7 +151,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     });
 
     if (error) {
-      if (isSignupRestrictedError(error.message)) {
+      if (isSignupRestrictedError(error as { message?: string; code?: string })) {
         setErrorState({ kind: 'restricted' });
       } else {
         setErrorState({ kind: 'message', text: error.message });
@@ -217,6 +218,12 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
       } else {
         await handleForgotPassword();
       }
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Unable to reach authentication service. Please try again.';
+      setErrorState({ kind: 'message', text: message });
     } finally {
       setIsSubmitting(false);
     }

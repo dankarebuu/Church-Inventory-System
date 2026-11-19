@@ -80,6 +80,38 @@ const HISTORY_ACTION_META: Record<HistoryAction, { label: string; badgeVariant: 
   loan: { label: 'Loan', badgeVariant: 'loaned' },
 };
 
+function getHistoryActionMeta(
+  action: string | null | undefined
+): { label: string; badgeVariant: BadgeVariant } {
+  if (
+    typeof action === 'string' &&
+    Object.prototype.hasOwnProperty.call(HISTORY_ACTION_META, action)
+  ) {
+    return HISTORY_ACTION_META[action as HistoryAction];
+  }
+  const formatted = typeof action === 'string' && action.trim() ? action.trim() : null;
+  return {
+    label: formatted ? formatted.charAt(0).toUpperCase() + formatted.slice(1) : 'Activity',
+    badgeVariant: 'outline',
+  };
+}
+
+function getSafeConditionMeta(
+  condition: unknown
+): { label: string; badgeVariant: BadgeVariant } {
+  if (
+    typeof condition === 'string' &&
+    Object.prototype.hasOwnProperty.call(CONDITION_META, condition)
+  ) {
+    return CONDITION_META[condition as keyof typeof CONDITION_META];
+  }
+  const formatted = typeof condition === 'string' && condition.trim() ? condition.trim() : null;
+  return {
+    label: formatted ? formatted.charAt(0).toUpperCase() + formatted.slice(1) : 'Unknown',
+    badgeVariant: 'repair',
+  };
+}
+
 const KPI_ICON_CLASSES: Record<NonNullable<KpiCardSpec['tone']>, string> = {
   default: 'bg-secondary text-foreground',
   success: 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400',
@@ -616,7 +648,7 @@ export function DashboardPage() {
                 ) : (
                   <div className="space-y-2.5">
                     {visibleFlaggedItems.map((item) => {
-                      const meta = CONDITION_META[item.condition];
+                      const meta = getSafeConditionMeta(item.condition);
                       const color = getCategoryColor(
                         item.category,
                         categories,
@@ -967,7 +999,7 @@ export function DashboardPage() {
                   ) : (
                     <div className="space-y-2.5">
                       {recentActivity.map((entry: HistoryEntry) => {
-                        const actionMeta = HISTORY_ACTION_META[entry.action];
+                        const actionMeta = getHistoryActionMeta(entry.action);
                         const itemName = resolveHistoryItemName(entry);
                         const summary = describeHistoryEntry(entry);
                         const actorName = getUserEmailPrefix(entry.user_email);

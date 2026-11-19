@@ -48,6 +48,7 @@ import type {
   Database,
   ImportHistoryPayload,
   InventoryItem,
+  LoanRecord,
   LocationRecord,
 } from '@/types/database';
 import {
@@ -87,6 +88,8 @@ interface QueuedLoanCandidate {
   checkedOutBy?: string | null;
   sourceLoanId?: string;
   matchedActiveLoanIds?: ReadonlySet<string>;
+  matchedActiveLoans?: readonly LoanRecord[];
+  hasReturnDateField?: boolean;
 }
 
 const PREVIEW_ROW_LIMIT = 50;
@@ -142,6 +145,45 @@ function findMatchingInventoryItem(
   const rowName = row.item.trim().toLowerCase();
   return existingItems.find(
     (item) => item.item.trim().toLowerCase() === rowName
+  );
+}
+
+function matchesExistingActiveLoan(
+  borrowerName: string,
+  returnDate: string | null,
+  hasReturnDateField: boolean,
+  activeLoans: readonly LoanRecord[]
+): boolean {
+  const openLoans = activeLoans.filter((loan) => loan.returned_at == null);
+  if (openLoans.length === 0) return false;
+
+  const normalizedBorrower = borrowerName.trim().toLowerCase();
+  const normalizedCandidateDue = normalizeImportDueDate(returnDate).dueDate;
+
+  const exactSingleMatch = openLoans.some((loan) => {
+    if (loan.borrower_name.trim().toLowerCase() !== normalizedBorrower) return false;
+    if (!hasReturnDateField) return true;
+    const existingDue = trimOrNull(loan.due_date) ?? null;
+    return existingDue === normalizedCandidateDue;
+  });
+  if (exactSingleMatch) return true;
+
+  // Match the semicolon-joined summary produced by exportItemsToCSV().
+  const joinedBorrowers = openLoans
+    .map((loan) => loan.borrower_name.trim().toLowerCase())
+    .join('; ');
+  if (normalizedBorrower !== joinedBorrowers) return false;
+
+  if (openLoans.length > 1 || !hasReturnDateField) return true;
+
+  const joinedDueDates = openLoans
+    .map((loan) => trimOrNull(loan.due_date))
+    .filter((d): d is string => Boolean(d))
+    .join('; ');
+  const normalizedRawReturn = trimOrNull(returnDate) ?? '';
+  return (
+    normalizedRawReturn === joinedDueDates ||
+    (trimOrNull(openLoans[0].due_date) ?? null) === normalizedCandidateDue
   );
 }
 
@@ -252,6 +294,7 @@ export function ImportWizardDialog({
     let matchedCount = 0;
     let loanEligibleCount = 0;
     let loanSkippedZeroQtyCount = 0;
+    let existingLoansSkippedCount = 0;
 
     for (const row of parsedRows) {
       const catKey = row.category.trim().toLowerCase();
@@ -264,9 +307,14 @@ export function ImportWizardDialog({
         newLocationNames.add(locName);
       }
 
-      const matchedExisting = findMatchingInventoryItem(row, items);
+      const matchedExisting =
+        importMode === 'duplicate' ? undefined : findMatchingInventoryItem(row, items);
       if (matchedExisting) {
         matchedCount += 1;
+      }
+
+      if (matchedExisting && importMode === 'skip') {
+        continue;
       }
 
       const rowQty =
@@ -276,19 +324,43 @@ export function ImportWizardDialog({
           ? matchedExisting.qty
           : row.qty;
 
+      const matchedActiveLoans =
+        matchedExisting && importMode === 'update' ? (matchedExisting.activeLoans ?? []) : [];
+      const matchedActiveLoanIds = new Set(matchedActiveLoans.map((loan) => loan.id));
+
       if (row.loans && row.loans.length > 0) {
         for (const loan of row.loans) {
+          if (loan.id && matchedActiveLoanIds.has(loan.id)) {
+            existingLoansSkippedCount += 1;
+            continue;
+          }
           if (rowQty >= loan.qty_loaned) {
             loanEligibleCount += 1;
           } else {
             loanSkippedZeroQtyCount += 1;
           }
         }
-      } else if (trimOrNull(row.borrower)) {
-        if (rowQty >= 1) {
-          loanEligibleCount += 1;
-        } else {
-          loanSkippedZeroQtyCount += 1;
+      } else {
+        const borrowerName = trimOrNull(row.borrower);
+        if (borrowerName) {
+          if (
+            matchedExisting &&
+            importMode === 'update' &&
+            matchesExistingActiveLoan(
+              borrowerName,
+              row.returnDate,
+              row.providedFields.includes('returnDate'),
+              matchedActiveLoans
+            )
+          ) {
+            existingLoansSkippedCount += 1;
+            continue;
+          }
+          if (rowQty >= 1) {
+            loanEligibleCount += 1;
+          } else {
+            loanSkippedZeroQtyCount += 1;
+          }
         }
       }
     }
@@ -300,6 +372,7 @@ export function ImportWizardDialog({
       newLocations: [...newLocationNames],
       loanEligibleCount,
       loanSkippedZeroQtyCount,
+      existingLoansSkippedCount,
     };
   }, [categories, importMode, items, locations, parsedRows]);
 
@@ -461,8 +534,10 @@ export function ImportWizardDialog({
         itemId: string,
         effectiveQty: number,
         existingOnLoan: number,
-        matchedActiveLoanIds?: ReadonlySet<string>
+        matchedActiveLoanIds?: ReadonlySet<string>,
+        matchedActiveLoans?: readonly LoanRecord[]
       ) => {
+        const hasReturnDateField = row.providedFields.includes('returnDate');
         if (row.loans && row.loans.length > 0) {
           for (const loan of row.loans) {
             loanCandidates.push({
@@ -479,6 +554,8 @@ export function ImportWizardDialog({
               checkedOutBy: loan.checked_out_by,
               sourceLoanId: loan.id,
               matchedActiveLoanIds,
+              matchedActiveLoans,
+              hasReturnDateField: true,
             });
           }
           return;
@@ -495,6 +572,8 @@ export function ImportWizardDialog({
             qtyLoaned: 1,
             returnDate: row.returnDate,
             matchedActiveLoanIds,
+            matchedActiveLoans,
+            hasReturnDateField,
           });
         }
       };
@@ -601,15 +680,17 @@ export function ImportWizardDialog({
           });
 
           const effectiveQty = providedSet.has('qty') ? row.qty : matched.qty;
+          const matchedActiveLoans = matched.activeLoans ?? [];
           const activeLoanIds = new Set(
-            (matched.activeLoans ?? []).map((loan) => loan.id)
+            matchedActiveLoans.map((loan) => loan.id)
           );
           queueRowLoans(
             row,
             matched.id,
             effectiveQty,
             matched.qty_on_loan,
-            activeLoanIds
+            activeLoanIds,
+            matchedActiveLoans
           );
         } else {
           const topCategory = await ensureCategoryRecord(row.category, null);
@@ -667,12 +748,28 @@ export function ImportWizardDialog({
       const loanInserts: LoanInsert[] = [];
       const assignedLoanCountByItemId = new Map<string, number>();
       let skippedLoansCount = 0;
+      let skippedExistingLoansCount = 0;
 
       for (const candidate of loanCandidates) {
         if (
           candidate.sourceLoanId &&
           candidate.matchedActiveLoanIds?.has(candidate.sourceLoanId)
         ) {
+          skippedExistingLoansCount += 1;
+          continue;
+        }
+
+        if (
+          !candidate.sourceLoanId &&
+          candidate.matchedActiveLoans &&
+          matchesExistingActiveLoan(
+            candidate.borrower,
+            candidate.returnDate,
+            candidate.hasReturnDateField ?? true,
+            candidate.matchedActiveLoans
+          )
+        ) {
+          skippedExistingLoansCount += 1;
           continue;
         }
 
@@ -762,6 +859,11 @@ export function ImportWizardDialog({
       }
       if (loanInserts.length > 0) {
         parts.push(`${loanInserts.length} ${loanInserts.length === 1 ? 'loan' : 'loans'} created`);
+      }
+      if (skippedExistingLoansCount > 0) {
+        parts.push(
+          `${skippedExistingLoansCount} existing ${skippedExistingLoansCount === 1 ? 'loan' : 'loans'} skipped`
+        );
       }
       if (skippedLoansCount > 0) {
         parts.push(`${skippedLoansCount} ${skippedLoansCount === 1 ? 'loan' : 'loans'} skipped (qty 0 / no capacity)`);
@@ -899,6 +1001,12 @@ export function ImportWizardDialog({
                   <Badge variant="loaned">
                     {previewSummary.loanEligibleCount} active{' '}
                     {previewSummary.loanEligibleCount === 1 ? 'loan' : 'loans'} to create
+                  </Badge>
+                )}
+                {previewSummary.existingLoansSkippedCount > 0 && (
+                  <Badge variant="outline">
+                    {previewSummary.existingLoansSkippedCount} existing{' '}
+                    {previewSummary.existingLoansSkippedCount === 1 ? 'loan' : 'loans'} preserved
                   </Badge>
                 )}
               </div>

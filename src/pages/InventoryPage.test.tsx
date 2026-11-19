@@ -548,4 +548,58 @@ describe('InventoryPage', () => {
     expect(screen.getByText('Pearl Brass Snare')).toBeInTheDocument();
     expect(screen.queryByText('Mogami XLR Cable')).not.toBeInTheDocument();
   });
+
+  it('prefers local checked_at over stale UTC dateChecked in InventoryGrid and ItemDetailDrawer while falling back for legacy items', async () => {
+    const user = userEvent.setup();
+    const localMorning = new Date(2026, 10, 15, 2, 0, 0);
+
+    mockUseAuth.mockReturnValue(makeAuthValue('member'));
+    mockUseInventoryItems.mockReturnValue({
+      data: [
+        {
+          ...makeSampleItems('member')[0],
+          id: 'item-tz-priority',
+          item: 'TZ Test Snare',
+          dateChecked: 'November 14, 2026',
+          checked_at: localMorning.toISOString(),
+        },
+        {
+          ...makeSampleItems('member')[1],
+          id: 'item-legacy-fallback',
+          item: 'Legacy Fallback Cable',
+          dateChecked: 'Legacy Checkoff',
+          checked_at: null,
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseCategories.mockReturnValue({ data: sampleCategories, isLoading: false });
+    mockUseLocations.mockReturnValue({ data: sampleLocations, isLoading: false });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/inventory']}>
+          <Routes>
+            <Route path="/inventory" element={<InventoryPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    expect(screen.getByText(/Checked November 15, 2026/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Checked November 14, 2026/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Checked Legacy Checkoff/i)).toBeInTheDocument();
+
+    await user.click(screen.getByText('TZ Test Snare'));
+    const drawer = await screen.findByRole('dialog');
+    expect(within(drawer).getByText('November 15, 2026')).toBeInTheDocument();
+    expect(within(drawer).queryByText(/November 14, 2026/i)).not.toBeInTheDocument();
+  });
 });
