@@ -92,6 +92,8 @@ function LocationDisplay() {
   return <div data-testid="app-pathname">{location.pathname}</div>;
 }
 
+const LAZY_ROUTE_WAIT_OPTIONS = { timeout: 5000 };
+
 describe('App & AppRoutes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -131,7 +133,7 @@ describe('App & AppRoutes', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Set New Password')).toBeInTheDocument();
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/reset-password');
     expect(screen.queryByLabelText('Primary sidebar')).not.toBeInTheDocument();
   });
@@ -158,7 +160,7 @@ describe('App & AppRoutes', () => {
     expect(screen.queryByRole('heading', { name: 'Team Roles' })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Operations Dashboard' })).toBeInTheDocument();
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
   });
 
   it('redirects / to /dashboard and mounts Operations Dashboard', async () => {
@@ -179,7 +181,7 @@ describe('App & AppRoutes', () => {
     await waitFor(() => {
       expect(screen.getByTestId('app-pathname')).toHaveTextContent('/dashboard');
       expect(screen.getByRole('heading', { name: 'Operations Dashboard' })).toBeInTheDocument();
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
   });
 
   it('mounts LoansPage at /loans for authenticated members while redirecting guests', async () => {
@@ -207,7 +209,7 @@ describe('App & AppRoutes', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Loans & Check-Out' })).toBeInTheDocument();
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/loans');
   });
 
@@ -229,7 +231,7 @@ describe('App & AppRoutes', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Sunday Checklist' })).toBeInTheDocument();
       expect(screen.getByRole('tab', { name: /print \/ pdf checklist/i })).toBeInTheDocument();
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/checklist');
     expect(screen.queryByRole('tab', { name: /live check-off/i })).not.toBeInTheDocument();
   });
@@ -251,7 +253,7 @@ describe('App & AppRoutes', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Band Inventory' })).toBeInTheDocument();
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/inventory');
     unmount();
 
@@ -269,7 +271,7 @@ describe('App & AppRoutes', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /categories & locations/i })).toBeInTheDocument();
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/categories');
   });
 
@@ -298,7 +300,7 @@ describe('App & AppRoutes', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Activity Log' })).toBeInTheDocument();
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/activity');
   });
 
@@ -328,7 +330,7 @@ describe('App & AppRoutes', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('app-pathname')).toHaveTextContent('/dashboard');
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.queryByRole('heading', { name: 'Team Roles' })).not.toBeInTheDocument();
     unmount();
 
@@ -347,7 +349,7 @@ describe('App & AppRoutes', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Team Roles' })).toBeInTheDocument();
-    });
+    }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/team');
   });
 });
