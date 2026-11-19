@@ -8,10 +8,40 @@ import type {
   LoanRecord,
 } from '@/types/database';
 
+export interface ParsedImportLoan {
+  id?: string;
+  borrower_name: string;
+  borrower_contact: string | null;
+  qty_loaned: number;
+  due_date: string | null;
+  notes: string | null;
+  checked_out_at?: string | null;
+  checked_out_by?: string | null;
+}
+
+export type ImportFieldKey =
+  | 'item'
+  | 'category'
+  | 'subcategory'
+  | 'brand'
+  | 'qty'
+  | 'condition'
+  | 'owner'
+  | 'location'
+  | 'dateChecked'
+  | 'checkedBy'
+  | 'remarks'
+  | 'serial'
+  | 'description'
+  | 'image_filename'
+  | 'borrower'
+  | 'returnDate';
+
 export interface ParsedImportItem {
   item: string;
   category: string;
   subcategory: string | null;
+  subcategory_id?: string | null;
   brand: string | null;
   qty: number;
   condition: ItemCondition;
@@ -25,14 +55,14 @@ export interface ParsedImportItem {
   image_filename: string | null;
   borrower: string | null;
   returnDate: string | null;
+  loans?: ParsedImportLoan[];
+  providedFields: ImportFieldKey[];
 }
 
 export interface ExportOptions {
   download?: boolean;
   filename?: string;
 }
-
-type ImportFieldKey = keyof ParsedImportItem;
 
 interface HeaderFieldSpec {
   field: ImportFieldKey;
@@ -288,6 +318,10 @@ export function mapCsvRowsByHeader(rows: readonly (readonly string[])[]): Parsed
     );
   }
 
+  const providedFields = (Object.keys(columnMap) as ImportFieldKey[]).filter(
+    (field) => columnMap[field] !== undefined
+  );
+
   const readCell = (row: readonly string[], field: ImportFieldKey): string | null => {
     const colIndex = columnMap[field];
     if (colIndex === undefined) return null;
@@ -321,6 +355,7 @@ export function mapCsvRowsByHeader(rows: readonly (readonly string[])[]): Parsed
       image_filename: readCell(row, 'image_filename'),
       borrower: readCell(row, 'borrower'),
       returnDate: readCell(row, 'returnDate'),
+      providedFields,
     });
   }
 
@@ -341,11 +376,76 @@ function normalizeJsonImages(value: unknown): string | null {
   return asOptionalString(value);
 }
 
+function extractActiveLoansFromJson(record: Record<string, unknown>): ParsedImportLoan[] {
+  if (!Array.isArray(record.activeLoans)) return [];
+  const parsed: ParsedImportLoan[] = [];
+
+  for (const rawLoan of record.activeLoans) {
+    if (typeof rawLoan !== 'object' || rawLoan === null) continue;
+    const loan = rawLoan as Record<string, unknown>;
+    if (loan.returned_at != null) continue;
+    const borrowerName = asOptionalString(loan.borrower_name);
+    if (!borrowerName) continue;
+
+    const rawLoanQty =
+      typeof loan.qty_loaned === 'number'
+        ? loan.qty_loaned
+        : typeof loan.qty_loaned === 'string' && loan.qty_loaned.trim()
+          ? Number(loan.qty_loaned)
+          : 1;
+    const qtyLoaned =
+      Number.isFinite(rawLoanQty) && Number.isInteger(rawLoanQty) && rawLoanQty >= 1
+        ? rawLoanQty
+        : 1;
+
+    parsed.push({
+      ...(asOptionalString(loan.id) ? { id: asOptionalString(loan.id)! } : {}),
+      borrower_name: borrowerName,
+      borrower_contact: asOptionalString(loan.borrower_contact),
+      qty_loaned: qtyLoaned,
+      due_date: asOptionalString(loan.due_date),
+      notes: asOptionalString(loan.notes),
+      checked_out_at: asOptionalString(loan.checked_out_at),
+      checked_out_by: asOptionalString(loan.checked_out_by),
+    });
+  }
+
+  return parsed;
+}
+
+function collectJsonProvidedFields(record: Record<string, unknown>): ImportFieldKey[] {
+  const has = (key: string) => key in record && record[key] !== undefined;
+  const fields: ImportFieldKey[] = [];
+
+  if (has('item') || has('equipment')) fields.push('item');
+  if (has('category') || has('category_id')) fields.push('category');
+  if (has('subcategory') || has('subcategory_id')) fields.push('subcategory');
+  if (has('brand')) fields.push('brand');
+  if (has('qty')) fields.push('qty');
+  if (has('condition') || has('status')) fields.push('condition');
+  if (has('owner')) fields.push('owner');
+  if (has('location') || has('location_id')) fields.push('location');
+  if (has('dateChecked')) fields.push('dateChecked');
+  if (has('checkedBy')) fields.push('checkedBy');
+  if (has('remarks')) fields.push('remarks');
+  if (has('serial')) fields.push('serial');
+  if (has('description')) fields.push('description');
+  if (has('image_filename')) fields.push('image_filename');
+  if (has('borrower') || has('borrower_name') || has('activeLoans')) fields.push('borrower');
+  if (has('returnDate') || has('due_date') || has('activeLoans')) fields.push('returnDate');
+
+  return fields;
+}
+
 /**
  * Parses a WINGMACC JSON backup `{ items: [...] }` or raw item array into
- * normalized import rows while preserving `qty = 0`.
+ * normalized import rows while preserving `qty = 0`, `subcategory_id`,
+ * `activeLoans`, and present field tracking.
  */
-export function parseJsonImportPayload(jsonText: string): ParsedImportItem[] {
+export function parseJsonImportPayload(
+  jsonText: string,
+  categories: readonly Category[] = []
+): ParsedImportItem[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stripBom(jsonText));
@@ -378,10 +478,44 @@ export function parseJsonImportPayload(jsonText: string): ParsedImportItem[] {
       asOptionalString(record.item) ?? asOptionalString(record.equipment);
     if (!itemName) continue;
 
+    const categoryId = asOptionalString(record.category_id);
+    const categoryFromText = asOptionalString(record.category);
+    const categoryFromId = categoryId
+      ? categories.find((c) => c.id === categoryId)?.name
+      : undefined;
+    const resolvedCategoryName = categoryFromText ?? categoryFromId ?? 'Others';
+
+    const subcategoryId = asOptionalString(record.subcategory_id);
+    const subcategoryFromText = asOptionalString(record.subcategory);
+    const subcategoryFromId = subcategoryId
+      ? categories.find((c) => c.id === subcategoryId)?.name
+      : undefined;
+    const resolvedSubcategoryName =
+      subcategoryFromText ?? subcategoryFromId ?? null;
+
+    const activeLoans = extractActiveLoansFromJson(record);
+    const flatBorrower =
+      asOptionalString(record.borrower) ?? asOptionalString(record.borrower_name);
+    const flatReturnDate =
+      asOptionalString(record.returnDate) ?? asOptionalString(record.due_date);
+
+    const borrowerSummary =
+      activeLoans.length > 0
+        ? activeLoans.map((l) => l.borrower_name).join('; ')
+        : flatBorrower;
+    const returnDateSummary =
+      activeLoans.length > 0
+        ? activeLoans
+            .map((l) => l.due_date)
+            .filter((d): d is string => Boolean(d))
+            .join('; ') || null
+        : flatReturnDate;
+
     results.push({
       item: itemName,
-      category: asOptionalString(record.category) ?? 'Others',
-      subcategory: asOptionalString(record.subcategory),
+      category: resolvedCategoryName,
+      subcategory: resolvedSubcategoryName,
+      ...(subcategoryId ? { subcategory_id: subcategoryId } : {}),
       brand: asOptionalString(record.brand),
       qty: parseImportQty(record.qty, i + 1),
       condition: normalizeImportCondition(record.condition ?? record.status),
@@ -393,10 +527,10 @@ export function parseJsonImportPayload(jsonText: string): ParsedImportItem[] {
       serial: asOptionalString(record.serial),
       description: asOptionalString(record.description),
       image_filename: normalizeJsonImages(record.image_filename),
-      borrower:
-        asOptionalString(record.borrower) ?? asOptionalString(record.borrower_name),
-      returnDate:
-        asOptionalString(record.returnDate) ?? asOptionalString(record.due_date),
+      borrower: borrowerSummary,
+      returnDate: returnDateSummary,
+      ...(activeLoans.length > 0 ? { loans: activeLoans } : {}),
+      providedFields: collectJsonProvidedFields(record),
     });
   }
 

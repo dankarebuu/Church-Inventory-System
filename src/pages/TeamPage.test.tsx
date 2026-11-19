@@ -164,4 +164,37 @@ describe('TeamPage', () => {
       });
     });
   });
+
+  it('filters profiles by search query and role dropdown with Clear Filters', async () => {
+    const user = userEvent.setup();
+    renderTeamPage([adminOne, adminTwo, memberOne]);
+
+    expect(screen.getByText('dan@wingmacc.org')).toBeInTheDocument();
+    expect(screen.getByText('sarah@wingmacc.org')).toBeInTheDocument();
+    expect(screen.getByText('eli@wingmacc.org')).toBeInTheDocument();
+
+    // Search by name or email
+    await user.type(screen.getByPlaceholderText(/search team members/i), 'sarah');
+    expect(screen.getByText('sarah@wingmacc.org')).toBeInTheDocument();
+    expect(screen.queryByText('dan@wingmacc.org')).not.toBeInTheDocument();
+    expect(screen.queryByText('eli@wingmacc.org')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /clear filters/i }));
+    expect(screen.getByText('dan@wingmacc.org')).toBeInTheDocument();
+    expect(screen.getByText('eli@wingmacc.org')).toBeInTheDocument();
+
+    // Filter by Band Members
+    await user.click(screen.getByRole('combobox', { name: /filter by role/i }));
+    await user.click(await screen.findByRole('option', { name: /^band members$/i }));
+    expect(screen.getByText('eli@wingmacc.org')).toBeInTheDocument();
+    expect(screen.queryByText('dan@wingmacc.org')).not.toBeInTheDocument();
+    expect(screen.queryByText('sarah@wingmacc.org')).not.toBeInTheDocument();
+
+    // Filter by Admins
+    await user.click(screen.getByRole('combobox', { name: /filter by role/i }));
+    await user.click(await screen.findByRole('option', { name: /^admins$/i }));
+    expect(screen.getByText('dan@wingmacc.org')).toBeInTheDocument();
+    expect(screen.getByText('sarah@wingmacc.org')).toBeInTheDocument();
+    expect(screen.queryByText('eli@wingmacc.org')).not.toBeInTheDocument();
+  });
 });

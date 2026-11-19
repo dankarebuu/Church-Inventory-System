@@ -79,7 +79,14 @@ interface QueuedLoanCandidate {
   qty: number;
   existingOnLoan: number;
   borrower: string;
+  borrowerContact?: string | null;
+  qtyLoaned: number;
   returnDate: string | null;
+  notes?: string | null;
+  checkedOutAt?: string | null;
+  checkedOutBy?: string | null;
+  sourceLoanId?: string;
+  matchedActiveLoanIds?: ReadonlySet<string>;
 }
 
 const PREVIEW_ROW_LIMIT = 50;
@@ -214,7 +221,7 @@ export function ImportWizardDialog({
         file.type === 'application/json';
 
       const parsed = isJson
-        ? parseJsonImportPayload(content)
+        ? parseJsonImportPayload(content, categories)
         : mapCsvRowsByHeader(parseCSV(content));
 
       if (parsed.length === 0) {
@@ -257,12 +264,28 @@ export function ImportWizardDialog({
         newLocationNames.add(locName);
       }
 
-      if (findMatchingInventoryItem(row, items)) {
+      const matchedExisting = findMatchingInventoryItem(row, items);
+      if (matchedExisting) {
         matchedCount += 1;
       }
 
-      if (trimOrNull(row.borrower)) {
-        if (row.qty >= 1) {
+      const rowQty =
+        matchedExisting &&
+        importMode === 'update' &&
+        !row.providedFields.includes('qty')
+          ? matchedExisting.qty
+          : row.qty;
+
+      if (row.loans && row.loans.length > 0) {
+        for (const loan of row.loans) {
+          if (rowQty >= loan.qty_loaned) {
+            loanEligibleCount += 1;
+          } else {
+            loanSkippedZeroQtyCount += 1;
+          }
+        }
+      } else if (trimOrNull(row.borrower)) {
+        if (rowQty >= 1) {
           loanEligibleCount += 1;
         } else {
           loanSkippedZeroQtyCount += 1;
@@ -278,7 +301,7 @@ export function ImportWizardDialog({
       loanEligibleCount,
       loanSkippedZeroQtyCount,
     };
-  }, [categories, items, locations, parsedRows]);
+  }, [categories, importMode, items, locations, parsedRows]);
 
   const handleStartImport = async () => {
     if (!isSupabaseConfigured) {
@@ -294,12 +317,26 @@ export function ImportWizardDialog({
     setIsImporting(true);
     setParseError(null);
 
-    try {
-      const now = new Date();
-      const nowIso = now.toISOString();
-      const actorName = deriveActorName(profile, user);
-      const actorEmail = user?.email ?? profile?.email ?? 'unknown';
+    const committedInsertedIds: string[] = [];
+    const committedUpdatedItems: ImportHistoryPayload['updatedItems'] = [];
+    let anyDbWriteSucceeded = false;
+    let historyLogged = false;
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const actorName = deriveActorName(profile, user);
+    const actorEmail = user?.email ?? profile?.email ?? 'unknown';
 
+    const invalidateAllCaches = async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.categories }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.locations }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.loans }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+      ]);
+    };
+
+    try {
       const workingCategories = [...categories];
       const workingLocations = [...locations];
 
@@ -371,6 +408,7 @@ export function ImportWizardDialog({
           throw new Error(`Failed to create category "${trimmed}": ${error.message}`);
         }
 
+        anyDbWriteSucceeded = true;
         workingCategories.push(data);
         return data;
       };
@@ -413,12 +451,55 @@ export function ImportWizardDialog({
           throw new Error(`Failed to create location "${trimmed}": ${error.message}`);
         }
 
+        anyDbWriteSucceeded = true;
         workingLocations.push(data);
         return data;
       };
 
+      const queueRowLoans = (
+        row: ParsedImportItem,
+        itemId: string,
+        effectiveQty: number,
+        existingOnLoan: number,
+        matchedActiveLoanIds?: ReadonlySet<string>
+      ) => {
+        if (row.loans && row.loans.length > 0) {
+          for (const loan of row.loans) {
+            loanCandidates.push({
+              itemId,
+              itemName: row.item,
+              qty: effectiveQty,
+              existingOnLoan,
+              borrower: loan.borrower_name,
+              borrowerContact: loan.borrower_contact,
+              qtyLoaned: loan.qty_loaned,
+              returnDate: loan.due_date,
+              notes: loan.notes,
+              checkedOutAt: loan.checked_out_at,
+              checkedOutBy: loan.checked_out_by,
+              sourceLoanId: loan.id,
+              matchedActiveLoanIds,
+            });
+          }
+          return;
+        }
+
+        const borrowerName = trimOrNull(row.borrower);
+        if (borrowerName) {
+          loanCandidates.push({
+            itemId,
+            itemName: row.item,
+            qty: effectiveQty,
+            existingOnLoan,
+            borrower: borrowerName,
+            qtyLoaned: 1,
+            returnDate: row.returnDate,
+            matchedActiveLoanIds,
+          });
+        }
+      };
+
       const insertedPayloads: InventoryInsert[] = [];
-      const updatedItemsForHistory: ImportHistoryPayload['updatedItems'] = [];
       const loanCandidates: QueuedLoanCandidate[] = [];
       let skippedExistingCount = 0;
 
@@ -434,39 +515,75 @@ export function ImportWizardDialog({
           continue;
         }
 
-        const topCategory = await ensureCategoryRecord(row.category, null);
-        const subCategory = row.subcategory
-          ? await ensureCategoryRecord(row.subcategory, topCategory)
-          : null;
-        const locationRecord = await ensureLocationRecord(row.location);
-
-        const sharedFields: InventoryUpdate = {
-          item: row.item,
-          category: topCategory.name,
-          category_id: topCategory.id,
-          subcategory_id: subCategory?.id ?? null,
-          brand: row.brand,
-          qty: row.qty,
-          condition: row.condition,
-          owner: row.owner,
-          location: locationRecord?.name ?? row.location ?? null,
-          location_id: locationRecord?.id ?? null,
-          remarks: row.remarks,
-          serial: row.serial,
-          description: row.description,
-          image_filename: row.image_filename,
-          updated_at: nowIso,
-        };
-
-        const borrowerName = trimOrNull(row.borrower);
+        const providedSet = new Set(row.providedFields);
 
         if (matched && importMode === 'update') {
           const prevSnapshot = buildImportPrevSnapshot(matched);
           const updatePayload: InventoryUpdate = {
-            ...sharedFields,
-            ...(row.dateChecked ? { dateChecked: row.dateChecked } : {}),
-            ...(row.checkedBy ? { checkedBy: row.checkedBy } : {}),
+            updated_at: nowIso,
           };
+
+          if (providedSet.has('item')) {
+            updatePayload.item = row.item;
+          }
+
+          let resolvedTopCategory: Category | null = null;
+          if (providedSet.has('category')) {
+            resolvedTopCategory = await ensureCategoryRecord(row.category, null);
+            updatePayload.category = resolvedTopCategory.name;
+            updatePayload.category_id = resolvedTopCategory.id;
+          } else {
+            resolvedTopCategory =
+              (matched.category_id
+                ? workingCategories.find((c) => c.id === matched.category_id)
+                : undefined) ??
+              workingCategories.find(
+                (c) =>
+                  c.parent_id === null &&
+                  c.name.trim().toLowerCase() === matched.category.trim().toLowerCase()
+              ) ??
+              null;
+          }
+
+          if (providedSet.has('subcategory')) {
+            if (row.subcategory && resolvedTopCategory) {
+              const subCat = await ensureCategoryRecord(
+                row.subcategory,
+                resolvedTopCategory
+              );
+              updatePayload.subcategory_id = subCat.id;
+            } else if (row.subcategory_id) {
+              const existingSub = workingCategories.find(
+                (c) => c.id === row.subcategory_id
+              );
+              updatePayload.subcategory_id = existingSub?.id ?? null;
+            } else {
+              updatePayload.subcategory_id = null;
+            }
+          }
+
+          if (providedSet.has('location')) {
+            const locationRecord = await ensureLocationRecord(row.location);
+            updatePayload.location = locationRecord?.name ?? row.location ?? null;
+            updatePayload.location_id = locationRecord?.id ?? null;
+          }
+
+          if (providedSet.has('brand')) updatePayload.brand = row.brand;
+          if (providedSet.has('qty')) updatePayload.qty = row.qty;
+          if (providedSet.has('condition')) updatePayload.condition = row.condition;
+          if (providedSet.has('owner')) updatePayload.owner = row.owner;
+          if (providedSet.has('remarks')) updatePayload.remarks = row.remarks;
+          if (providedSet.has('serial')) updatePayload.serial = row.serial;
+          if (providedSet.has('description')) updatePayload.description = row.description;
+          if (providedSet.has('image_filename')) {
+            updatePayload.image_filename = row.image_filename;
+          }
+          if (providedSet.has('dateChecked') && row.dateChecked) {
+            updatePayload.dateChecked = row.dateChecked;
+          }
+          if (providedSet.has('checkedBy') && row.checkedBy) {
+            updatePayload.checkedBy = row.checkedBy;
+          }
 
           const { error: updateError } = await supabase
             .from('inventory')
@@ -477,28 +594,52 @@ export function ImportWizardDialog({
             throw new Error(`Failed to update "${row.item}": ${updateError.message}`);
           }
 
-          updatedItemsForHistory.push({
+          anyDbWriteSucceeded = true;
+          committedUpdatedItems.push({
             id: matched.id,
             prev_data: prevSnapshot,
           });
 
-          if (borrowerName) {
-            loanCandidates.push({
-              itemId: matched.id,
-              itemName: row.item,
-              qty: row.qty,
-              existingOnLoan: matched.qty_on_loan,
-              borrower: borrowerName,
-              returnDate: row.returnDate,
-            });
-          }
+          const effectiveQty = providedSet.has('qty') ? row.qty : matched.qty;
+          const activeLoanIds = new Set(
+            (matched.activeLoans ?? []).map((loan) => loan.id)
+          );
+          queueRowLoans(
+            row,
+            matched.id,
+            effectiveQty,
+            matched.qty_on_loan,
+            activeLoanIds
+          );
         } else {
+          const topCategory = await ensureCategoryRecord(row.category, null);
+          let subCategory: Category | null = null;
+          if (row.subcategory) {
+            subCategory = await ensureCategoryRecord(row.subcategory, topCategory);
+          } else if (row.subcategory_id) {
+            subCategory =
+              workingCategories.find((c) => c.id === row.subcategory_id) ?? null;
+          }
+          const locationRecord = await ensureLocationRecord(row.location);
+
           const newId = `item_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 6)}`;
           const insertPayload: InventoryInsert = {
             id: newId,
-            ...sharedFields,
             item: row.item,
             category: topCategory.name,
+            category_id: topCategory.id,
+            subcategory_id: subCategory?.id ?? null,
+            brand: row.brand,
+            qty: row.qty,
+            condition: row.condition,
+            owner: row.owner,
+            location: locationRecord?.name ?? row.location ?? null,
+            location_id: locationRecord?.id ?? null,
+            remarks: row.remarks,
+            serial: row.serial,
+            description: row.description,
+            image_filename: row.image_filename,
+            updated_at: nowIso,
             checkedBy: row.checkedBy ?? actorName,
             dateChecked: row.dateChecked ?? formatDisplayDate(now),
             checked_at: nowIso,
@@ -506,17 +647,7 @@ export function ImportWizardDialog({
           };
 
           insertedPayloads.push(insertPayload);
-
-          if (borrowerName) {
-            loanCandidates.push({
-              itemId: newId,
-              itemName: row.item,
-              qty: row.qty,
-              existingOnLoan: 0,
-              borrower: borrowerName,
-              returnDate: row.returnDate,
-            });
-          }
+          queueRowLoans(row, newId, row.qty, 0);
         }
       }
 
@@ -528,6 +659,9 @@ export function ImportWizardDialog({
         if (insertError) {
           throw new Error(`Failed to insert imported items: ${insertError.message}`);
         }
+
+        anyDbWriteSucceeded = true;
+        committedInsertedIds.push(...insertedPayloads.map((entry) => entry.id));
       }
 
       const loanInserts: LoanInsert[] = [];
@@ -535,26 +669,44 @@ export function ImportWizardDialog({
       let skippedLoansCount = 0;
 
       for (const candidate of loanCandidates) {
+        if (
+          candidate.sourceLoanId &&
+          candidate.matchedActiveLoanIds?.has(candidate.sourceLoanId)
+        ) {
+          continue;
+        }
+
         const alreadyAssigned = assignedLoanCountByItemId.get(candidate.itemId) ?? 0;
         const availableCapacity = candidate.qty - candidate.existingOnLoan - alreadyAssigned;
-        if (candidate.qty < 1 || availableCapacity < 1) {
+        if (
+          candidate.qty < 1 ||
+          candidate.qtyLoaned < 1 ||
+          candidate.qtyLoaned > availableCapacity
+        ) {
           skippedLoansCount += 1;
           continue;
         }
 
         const { dueDate, unparsedNote } = normalizeImportDueDate(candidate.returnDate);
-        assignedLoanCountByItemId.set(candidate.itemId, alreadyAssigned + 1);
+        const combinedNotes = [trimOrNull(candidate.notes), unparsedNote]
+          .filter((part): part is string => Boolean(part))
+          .join(' · ');
+
+        assignedLoanCountByItemId.set(
+          candidate.itemId,
+          alreadyAssigned + candidate.qtyLoaned
+        );
         loanInserts.push({
           item_id: candidate.itemId,
           borrower_name: candidate.borrower,
-          borrower_contact: null,
-          qty_loaned: 1,
-          checked_out_at: nowIso,
+          borrower_contact: candidate.borrowerContact ?? null,
+          qty_loaned: candidate.qtyLoaned,
+          checked_out_at: candidate.checkedOutAt ?? nowIso,
           due_date: dueDate,
           returned_at: null,
-          checked_out_by: actorName,
+          checked_out_by: candidate.checkedOutBy ?? actorName,
           returned_by: null,
-          notes: unparsedNote,
+          notes: combinedNotes || null,
         });
       }
 
@@ -566,13 +718,14 @@ export function ImportWizardDialog({
         if (loanError) {
           throw new Error(`Items imported, but loan creation failed: ${loanError.message}`);
         }
+
+        anyDbWriteSucceeded = true;
       }
 
-      const insertedIds = insertedPayloads.map((entry) => entry.id);
-      if (insertedIds.length > 0 || updatedItemsForHistory.length > 0) {
+      if (committedInsertedIds.length > 0 || committedUpdatedItems.length > 0) {
         const importPayload: ImportHistoryPayload = {
-          insertedIds,
-          updatedItems: updatedItemsForHistory,
+          insertedIds: committedInsertedIds,
+          updatedItems: committedUpdatedItems,
         };
 
         const historyEntry: HistoryInsert = {
@@ -593,19 +746,16 @@ export function ImportWizardDialog({
         if (historyError) {
           throw new Error(historyError.message);
         }
+
+        historyLogged = true;
+        anyDbWriteSucceeded = true;
       }
 
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.categories }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.locations }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-      ]);
+      await invalidateAllCaches();
 
       const parts = [
-        `${insertedIds.length} added`,
-        `${updatedItemsForHistory.length} updated`,
+        `${committedInsertedIds.length} added`,
+        `${committedUpdatedItems.length} updated`,
       ];
       if (skippedExistingCount > 0) {
         parts.push(`${skippedExistingCount} skipped`);
@@ -623,6 +773,45 @@ export function ImportWizardDialog({
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Unable to complete import.';
+
+      if (
+        !historyLogged &&
+        (committedInsertedIds.length > 0 || committedUpdatedItems.length > 0)
+      ) {
+        try {
+          const partialHistoryEntry: HistoryInsert = {
+            id: createHistoryId(),
+            action: 'import',
+            item_id: 'batch_import',
+            item_data: {
+              insertedIds: committedInsertedIds,
+              updatedItems: committedUpdatedItems,
+            } satisfies ImportHistoryPayload,
+            prev_data: null,
+            user_email: actorEmail,
+            undone: false,
+            timestamp: nowIso,
+          };
+          const { error: fallbackHistoryErr } = await supabase
+            .from('history_log')
+            .insert([partialHistoryEntry]);
+          if (!fallbackHistoryErr) {
+            historyLogged = true;
+            anyDbWriteSucceeded = true;
+          }
+        } catch {
+          // Preserve the primary import error if fallback logging also fails.
+        }
+      }
+
+      if (anyDbWriteSucceeded) {
+        try {
+          await invalidateAllCaches();
+        } catch {
+          // Preserve the primary import error.
+        }
+      }
+
       setParseError(message);
     } finally {
       setIsImporting(false);

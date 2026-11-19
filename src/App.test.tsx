@@ -5,7 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '@/features/auth/useAuth';
 import { App, AppRoutes, createAppQueryClient } from './App';
 
-const { mockGetSession, mockOnAuthStateChange, mockChannel, mockRemoveChannel } = vi.hoisted(() => {
+const {
+  mockGetSession,
+  mockOnAuthStateChange,
+  mockChannel,
+  mockRemoveChannel,
+  mockProfileRole,
+} = vi.hoisted(() => {
   const ch = {
     on: vi.fn(),
     subscribe: vi.fn((cb?: (status: 'SUBSCRIBED') => void) => {
@@ -22,6 +28,7 @@ const { mockGetSession, mockOnAuthStateChange, mockChannel, mockRemoveChannel } 
     })),
     mockChannel: vi.fn(() => ch),
     mockRemoveChannel: vi.fn(async () => 'ok'),
+    mockProfileRole: { value: 'member' as 'member' | 'admin' },
   };
 });
 
@@ -45,7 +52,7 @@ vi.mock('@/lib/supabase', () => ({
                     email: 'member@wingmacc.org',
                     first_name: 'Band',
                     last_name: 'Member',
-                    role: 'member',
+                    role: mockProfileRole.value,
                     created_at: '2026-11-18T00:00:00.000Z',
                   },
                   error: null,
@@ -82,6 +89,7 @@ describe('App & AppRoutes', () => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
+    mockProfileRole.value = 'member';
     mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
   });
 
@@ -221,5 +229,54 @@ describe('App & AppRoutes', () => {
       expect(screen.getByRole('heading', { name: 'Activity Log' })).toBeInTheDocument();
     });
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/activity');
+  });
+
+  it('redirects authenticated members visiting /team to /dashboard while mounting TeamPage for admins', async () => {
+    sessionStorage.setItem('wingmacc_gateway_dismissed', 'true');
+    mockProfileRole.value = 'member';
+    mockGetSession.mockResolvedValue({
+      data: {
+        session: {
+          user: { id: 'user-1', email: 'member@wingmacc.org' },
+        },
+      },
+      error: null,
+    });
+    const memberQueryClient = createAppQueryClient();
+
+    const { unmount } = render(
+      <QueryClientProvider client={memberQueryClient}>
+        <MemoryRouter initialEntries={['/team']}>
+          <AuthProvider>
+            <LocationDisplay />
+            <AppRoutes />
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('app-pathname')).toHaveTextContent('/dashboard');
+    });
+    expect(screen.queryByRole('heading', { name: 'Team Roles' })).not.toBeInTheDocument();
+    unmount();
+
+    mockProfileRole.value = 'admin';
+    const adminQueryClient = createAppQueryClient();
+    render(
+      <QueryClientProvider client={adminQueryClient}>
+        <MemoryRouter initialEntries={['/team']}>
+          <AuthProvider>
+            <LocationDisplay />
+            <AppRoutes />
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Team Roles' })).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('app-pathname')).toHaveTextContent('/team');
   });
 });

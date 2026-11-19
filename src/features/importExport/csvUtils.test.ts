@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import type { HistoryEntry, LoanRecord } from '@/types/database';
+import type { Category, HistoryEntry, LoanRecord } from '@/types/database';
 import {
   exportItemsToCSV,
   exportItemsToJSON,
@@ -95,6 +95,18 @@ describe('mapCsvRowsByHeader', () => {
     );
   });
 
+  it('tracks providedFields strictly from CSV headers so omitted columns are identifiable', () => {
+    const csv = '"Equipment","Qty","Remarks"\n"Snare","0","OK"';
+    const items = mapCsvRowsByHeader(parseCSV(csv));
+    expect(items[0].providedFields).toEqual(
+      expect.arrayContaining(['item', 'qty', 'remarks'])
+    );
+    expect(items[0].providedFields).not.toContain('image_filename');
+    expect(items[0].providedFields).not.toContain('brand');
+    expect(items[0].providedFields).not.toContain('condition');
+    expect(items[0].providedFields).not.toContain('location');
+  });
+
   it('throws a clear validation error when CSV is missing an Item/Equipment header', () => {
     const rows = parseCSV('"Category","Brand","Qty","Remarks"\n"Drums","Pearl","2","OK"');
     expect(() => mapCsvRowsByHeader(rows)).toThrow(/item.*equipment/i);
@@ -134,6 +146,98 @@ describe('parseJsonImportPayload', () => {
 
   it('throws on invalid JSON structure missing items array', () => {
     expect(() => parseJsonImportPayload('{"foo": 123}')).toThrow(/items/i);
+  });
+
+  it('restores subcategory_id and activeLoans produced by exportItemsToJSON', () => {
+    const categories: Category[] = [
+      {
+        id: 'cat-drums',
+        name: 'Drums',
+        parent_id: null,
+        color: '#d97740',
+        icon: 'drum',
+        sort_order: 10,
+        created_at: '2026-11-18T00:00:00.000Z',
+      },
+      {
+        id: 'sub-snare',
+        name: 'Snares',
+        parent_id: 'cat-drums',
+        color: '#d97740',
+        icon: 'disc',
+        sort_order: 11,
+        created_at: '2026-11-18T00:00:00.000Z',
+      },
+    ];
+
+    const exportedItem: EnrichedInventoryItem = {
+      id: 'item-snare',
+      category: 'Drums',
+      category_id: 'cat-drums',
+      subcategory_id: 'sub-snare',
+      item: 'Pearl Brass Snare',
+      brand: 'Pearl',
+      qty: 2,
+      condition: 'working',
+      owner: 'Church Property',
+      location: 'Stage',
+      location_id: 'loc-stage',
+      serial: 'SN-100',
+      description: 'Brass snare',
+      image_filename: '["https://cdn.example.com/snare.jpg"]',
+      remarks: 'Tuned',
+      dateChecked: 'November 18, 2026',
+      checked_at: '2026-11-18T09:00:00.000Z',
+      checkedBy: 'Dan Caleb',
+      qty_on_loan: 2,
+      available_qty: 0,
+      activeLoans: [
+        {
+          id: 'loan-1',
+          item_id: 'item-snare',
+          borrower_name: 'Joel Santos',
+          borrower_contact: '09171234567',
+          qty_loaned: 2,
+          checked_out_at: '2026-11-15T10:00:00.000Z',
+          due_date: '2026-11-25',
+          returned_at: null,
+          checked_out_by: 'Dan Caleb',
+          returned_by: null,
+          notes: 'Youth camp',
+        },
+        {
+          id: 'loan-old',
+          item_id: 'item-snare',
+          borrower_name: 'Returned Person',
+          borrower_contact: null,
+          qty_loaned: 1,
+          checked_out_at: '2026-11-01T10:00:00.000Z',
+          due_date: null,
+          returned_at: '2026-11-05T10:00:00.000Z',
+          checked_out_by: 'Dan Caleb',
+          returned_by: 'Dan Caleb',
+          notes: null,
+        },
+      ],
+    };
+
+    const jsonBackup = exportItemsToJSON([exportedItem], [], { download: false });
+    const parsed = parseJsonImportPayload(jsonBackup, categories);
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].subcategory_id).toBe('sub-snare');
+    expect(parsed[0].subcategory).toBe('Snares');
+    expect(parsed[0].image_filename).toBe('["https://cdn.example.com/snare.jpg"]');
+    expect(parsed[0].loans).toEqual([
+      expect.objectContaining({
+        id: 'loan-1',
+        borrower_name: 'Joel Santos',
+        borrower_contact: '09171234567',
+        qty_loaned: 2,
+        due_date: '2026-11-25',
+        notes: 'Youth camp',
+      }),
+    ]);
   });
 });
 
