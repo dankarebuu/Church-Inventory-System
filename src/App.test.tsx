@@ -41,39 +41,47 @@ vi.mock('@/lib/supabase', () => ({
       signOut: vi.fn(async () => ({ error: null })),
       updateUser: vi.fn(async () => ({ data: { user: null }, error: null })),
     },
-    from: vi.fn((table: string) => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          maybeSingle: vi.fn(async () =>
-            table === 'profiles'
-              ? {
-                  data: {
-                    id: 'user-1',
-                    email: 'member@wingmacc.org',
-                    first_name: 'Band',
-                    last_name: 'Member',
-                    role: mockProfileRole.value,
-                    created_at: '2026-11-18T00:00:00.000Z',
-                  },
-                  error: null,
-                }
-              : { data: null, error: null }
-          ),
-        })),
-        order: vi.fn(() => ({
+    from: vi.fn((table: string) => {
+      const makeOrderResult = () => {
+        const result: Record<string, unknown> = {
           limit: vi.fn(async () => ({ data: [], error: null })),
           then: (
             onFulfilled: (value: { data: unknown[]; error: null }) => unknown,
             onRejected?: (reason: unknown) => unknown
           ) => Promise.resolve({ data: [], error: null }).then(onFulfilled, onRejected),
+        };
+        result.order = vi.fn(() => result);
+        return result;
+      };
+
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn(async () =>
+              table === 'profiles'
+                ? {
+                    data: {
+                      id: 'user-1',
+                      email: 'member@wingmacc.org',
+                      first_name: 'Band',
+                      last_name: 'Member',
+                      role: mockProfileRole.value,
+                      created_at: '2026-11-18T00:00:00.000Z',
+                    },
+                    error: null,
+                  }
+                : { data: null, error: null }
+            ),
+          })),
+          order: vi.fn(() => makeOrderResult()),
+          is: vi.fn(async () => ({ data: [], error: null })),
+          then: (
+            onFulfilled: (value: { data: unknown[]; error: null }) => unknown,
+            onRejected?: (reason: unknown) => unknown
+          ) => Promise.resolve({ data: [], error: null }).then(onFulfilled, onRejected),
         })),
-        is: vi.fn(async () => ({ data: [], error: null })),
-        then: (
-          onFulfilled: (value: { data: unknown[]; error: null }) => unknown,
-          onRejected?: (reason: unknown) => unknown
-        ) => Promise.resolve({ data: [], error: null }).then(onFulfilled, onRejected),
-      })),
-    })),
+      };
+    }),
     channel: mockChannel,
     removeChannel: mockRemoveChannel,
   },
@@ -148,6 +156,30 @@ describe('App & AppRoutes', () => {
     });
     expect(screen.getByLabelText('Primary sidebar')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Team Roles' })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Operations Dashboard' })).toBeInTheDocument();
+    });
+  });
+
+  it('redirects / to /dashboard and mounts Operations Dashboard', async () => {
+    sessionStorage.setItem('wingmacc_gateway_dismissed', 'true');
+    const queryClient = createAppQueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/']}>
+          <AuthProvider>
+            <LocationDisplay />
+            <AppRoutes />
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('app-pathname')).toHaveTextContent('/dashboard');
+      expect(screen.getByRole('heading', { name: 'Operations Dashboard' })).toBeInTheDocument();
+    });
   });
 
   it('mounts LoansPage at /loans for authenticated members while redirecting guests', async () => {
