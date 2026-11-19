@@ -53,7 +53,13 @@ vi.mock('@/lib/supabase', () => ({
               : { data: null, error: null }
           ),
         })),
-        order: vi.fn(async () => ({ data: [], error: null })),
+        order: vi.fn(() => ({
+          limit: vi.fn(async () => ({ data: [], error: null })),
+          then: (
+            onFulfilled: (value: { data: unknown[]; error: null }) => unknown,
+            onRejected?: (reason: unknown) => unknown
+          ) => Promise.resolve({ data: [], error: null }).then(onFulfilled, onRejected),
+        })),
         is: vi.fn(async () => ({ data: [], error: null })),
         then: (
           onFulfilled: (value: { data: unknown[]; error: null }) => unknown,
@@ -186,5 +192,34 @@ describe('App & AppRoutes', () => {
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/checklist');
     expect(screen.getByRole('tab', { name: /print \/ pdf checklist/i })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /live check-off/i })).not.toBeInTheDocument();
+  });
+
+  it('mounts ActivityPage at /activity for authenticated members while redirecting guests', async () => {
+    sessionStorage.setItem('wingmacc_gateway_dismissed', 'true');
+    mockGetSession.mockResolvedValue({
+      data: {
+        session: {
+          user: { id: 'user-1', email: 'member@wingmacc.org' },
+        },
+      },
+      error: null,
+    });
+    const queryClient = createAppQueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/activity']}>
+          <AuthProvider>
+            <LocationDisplay />
+            <AppRoutes />
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Activity Log' })).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('app-pathname')).toHaveTextContent('/activity');
   });
 });

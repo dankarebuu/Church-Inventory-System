@@ -1,16 +1,22 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
+  ChevronDown,
+  Download,
+  FileJson,
+  FileSpreadsheet,
   LayoutGrid,
   Loader2,
   PackageOpen,
   Plus,
+  Printer,
   RefreshCw,
   Search,
   Table as TableIcon,
+  Upload,
   X,
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -24,6 +30,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -34,6 +47,11 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/features/auth/useAuth';
 import { sortCategories, useCategories } from '@/features/categories/useCategories';
+import {
+  exportItemsToCSV,
+  exportItemsToJSON,
+} from '@/features/importExport/csvUtils';
+import { ImportWizardDialog } from '@/features/importExport/ImportWizardDialog';
 import { InventoryGrid } from '@/features/inventory/InventoryGrid';
 import { InventoryTable } from '@/features/inventory/InventoryTable';
 import { ItemDetailDrawer } from '@/features/inventory/ItemDetailDrawer';
@@ -46,7 +64,14 @@ import {
 import { CheckoutDialog } from '@/features/loans/CheckoutDialog';
 import { useLoanMutations } from '@/features/loans/useLoans';
 import { sortLocations, useLocations } from '@/features/locations/useLocations';
-import type { Category, ItemCondition, LoanRecord, LocationRecord } from '@/types/database';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import type {
+  Category,
+  HistoryEntry,
+  ItemCondition,
+  LoanRecord,
+  LocationRecord,
+} from '@/types/database';
 
 export const VIEW_MODE_STORAGE_KEY = 'wingmacc_view_mode';
 
@@ -105,6 +130,7 @@ function normalizeLoanFilter(raw: string | null): string {
  */
 export function InventoryPage({ headerActions }: InventoryPageProps) {
   const { role } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const {
@@ -133,6 +159,8 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     null
   );
   const [returningLoanId, setReturningLoanId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [isExportingJson, setIsExportingJson] = useState(false);
 
   const canCheck = role === 'member' || role === 'admin';
   const canAdmin = role === 'admin';
@@ -500,6 +528,40 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     }
   };
 
+  const handleExportCsv = () => {
+    if (!canAdmin) return;
+    const activeLoans = items.flatMap((entry) => entry.activeLoans ?? []);
+    exportItemsToCSV(items, activeLoans, categories);
+    toast.success(`Exported ${items.length} ${items.length === 1 ? 'item' : 'items'} as CSV.`);
+  };
+
+  const handleExportJson = async () => {
+    if (!canAdmin) return;
+    setIsExportingJson(true);
+    try {
+      let historyEntries: HistoryEntry[] = [];
+      if (isSupabaseConfigured) {
+        const { data, error: historyError } = await supabase
+          .from('history_log')
+          .select('*')
+          .order('timestamp', { ascending: false })
+          .limit(200);
+        if (historyError) {
+          throw new Error(historyError.message);
+        }
+        historyEntries = data ?? [];
+      }
+      exportItemsToJSON(items, historyEntries);
+      toast.success(`Exported ${items.length} ${items.length === 1 ? 'item' : 'items'} as JSON.`);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unable to export JSON backup.';
+      toast.error(message);
+    } finally {
+      setIsExportingJson(false);
+    }
+  };
+
   return (
     <section className="mx-auto max-w-7xl space-y-6">
       {/* Page Header */}
@@ -548,6 +610,44 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           </div>
 
           {canAdmin && headerActions}
+
+          {canAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" disabled={isExportingJson}>
+                  {isExportingJson ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Download className="size-4" aria-hidden="true" />
+                  )}
+                  <span>Export</span>
+                  <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={handleExportCsv}>
+                  <FileSpreadsheet className="size-4" aria-hidden="true" />
+                  <span>Export CSV</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void handleExportJson()}>
+                  <FileJson className="size-4" aria-hidden="true" />
+                  <span>Export JSON Backup</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => navigate('/checklist?tab=print')}>
+                  <Printer className="size-4" aria-hidden="true" />
+                  <span>Print / PDF Checklist</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {canAdmin && (
+            <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" aria-hidden="true" />
+              <span>Import</span>
+            </Button>
+          )}
 
           {canAdmin && (
             <Button type="button" onClick={handleOpenAdd}>
@@ -799,20 +899,30 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         />
       )}
 
-      {/* Admin Add/Edit Modal */}
+      {/* Admin Add/Edit Modal & Import Wizard */}
       {canAdmin && (
-        <ItemFormDialog
-          open={formOpen}
-          onOpenChange={(nextOpen) => {
-            setFormOpen(nextOpen);
-            if (!nextOpen) {
-              setEditingItem(null);
-            }
-          }}
-          item={editingItem}
-          categories={categories}
-          locations={locations}
-        />
+        <>
+          <ItemFormDialog
+            open={formOpen}
+            onOpenChange={(nextOpen) => {
+              setFormOpen(nextOpen);
+              if (!nextOpen) {
+                setEditingItem(null);
+              }
+            }}
+            item={editingItem}
+            categories={categories}
+            locations={locations}
+          />
+
+          <ImportWizardDialog
+            open={importOpen}
+            onOpenChange={setImportOpen}
+            items={items}
+            categories={categories}
+            locations={locations}
+          />
+        </>
       )}
 
       {/* Admin Soft-Delete Confirmation Dialog */}

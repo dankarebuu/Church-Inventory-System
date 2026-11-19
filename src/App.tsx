@@ -13,11 +13,13 @@ import { Toaster } from '@/components/ui/sonner';
 import { AuthModal } from '@/features/auth/AuthModal';
 import { AuthProvider } from '@/features/auth/useAuth';
 import { WelcomeGateway } from '@/features/auth/WelcomeGateway';
+import { ActivityPage } from '@/pages/ActivityPage';
 import { CategoriesPage } from '@/pages/CategoriesPage';
 import { ChecklistPage } from '@/pages/ChecklistPage';
 import { InventoryPage } from '@/pages/InventoryPage';
 import { LoansPage } from '@/pages/LoansPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
+import { TeamPage } from '@/pages/TeamPage';
 
 interface RoutePlaceholderProps {
   title: string;
@@ -92,11 +94,7 @@ export function AppRoutes() {
             path="/activity"
             element={
               <ProtectedRoute allowedRoles={['member', 'admin']}>
-                <RoutePlaceholder
-                  badge="Audit Trail"
-                  title="Activity Log"
-                  description="Searchable history of gear checks, updates, loans, and restorations."
-                />
+                <ActivityPage />
               </ProtectedRoute>
             }
           />
@@ -104,11 +102,7 @@ export function AppRoutes() {
             path="/team"
             element={
               <ProtectedRoute allowedRoles={['admin']}>
-                <RoutePlaceholder
-                  badge="Admin Only"
-                  title="Team Roles"
-                  description="Manage Band Member and Admin access roles across team profiles."
-                />
+                <TeamPage />
               </ProtectedRoute>
             }
           />

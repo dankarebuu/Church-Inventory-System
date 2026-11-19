@@ -330,6 +330,8 @@ describe('InventoryPage', () => {
     expect(screen.queryByText(/Joel Santos/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Dan Caleb/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /add item/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^export$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^import$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^ok$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^fix$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^lost$/i })).not.toBeInTheDocument();
@@ -350,6 +352,8 @@ describe('InventoryPage', () => {
     renderInventoryPage('member');
 
     expect(screen.queryByRole('button', { name: /add item/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^export$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^import$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /trash|delete/i })).not.toBeInTheDocument();
 
@@ -405,6 +409,23 @@ describe('InventoryPage', () => {
     renderInventoryPage('admin');
 
     expect(screen.getByRole('button', { name: /add item/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^export$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^import$/i })).toBeInTheDocument();
+
+    // Clicking Import launches the Header-Mapped ImportWizardDialog
+    await user.click(screen.getByRole('button', { name: /^import$/i }));
+    expect(await screen.findByRole('dialog', { name: /import equipment data/i })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /import equipment data/i })).not.toBeInTheDocument();
+    });
+
+    // Export menu exposes CSV & JSON options
+    await user.click(screen.getByRole('button', { name: /^export$/i }));
+    expect(await screen.findByRole('menuitem', { name: /export csv/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /export json backup/i })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
     const editButtons = screen.getAllByRole('button', { name: /edit/i });
     const trashButtons = screen.getAllByRole('button', { name: /trash|delete/i });
     expect(editButtons.length).toBeGreaterThan(0);
