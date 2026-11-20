@@ -89,6 +89,28 @@ ALTER TABLE public.inventory
 CREATE INDEX IF NOT EXISTS inventory_equipment_type_id_idx
   ON public.inventory (equipment_type_id);
 
+CREATE OR REPLACE FUNCTION public.clear_inventory_equipment_type_on_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.inventory
+     SET equipment_type_id = NULL,
+         equipment_type = NULL
+   WHERE equipment_type_id = OLD.id;
+
+  RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_equipment_types_before_delete ON public.equipment_types;
+CREATE TRIGGER trg_equipment_types_before_delete
+  BEFORE DELETE ON public.equipment_types
+  FOR EACH ROW
+  EXECUTE FUNCTION public.clear_inventory_equipment_type_on_delete();
+
 -- Backfill only rows where equipment_type_id IS NULL, ordered from most
 -- specific accessory/cable/stand/case terms to general instrument keywords.
 WITH classified AS (
@@ -274,6 +296,7 @@ BEGIN
   IF NEW.id IS DISTINCT FROM OLD.id
      OR NEW.item_id IS DISTINCT FROM OLD.item_id
      OR NEW.user_id IS DISTINCT FROM OLD.user_id
+     OR NEW.author_name IS DISTINCT FROM OLD.author_name
      OR NEW.author_email IS DISTINCT FROM OLD.author_email
      OR NEW.created_at IS DISTINCT FROM OLD.created_at
   THEN
@@ -288,7 +311,14 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  NEW.updated_at := now();
+  IF NEW.body IS DISTINCT FROM OLD.body
+     OR NEW.tag IS DISTINCT FROM OLD.tag
+  THEN
+    NEW.updated_at := now();
+  ELSE
+    NEW.updated_at := OLD.updated_at;
+  END IF;
+
   RETURN NEW;
 END;
 $$;

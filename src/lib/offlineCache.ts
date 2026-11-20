@@ -213,15 +213,34 @@ export function clearOfflineCache(userId?: string | null): void {
   }
 }
 
+const OFFLINE_NETWORK_ERROR_PATTERN =
+  /failed to fetch|networkerror|network request failed|load failed|fetch failed|err_internet_disconnected/i;
+
 /**
- * Returns `true` when the browser reports offline or a fetch failed with a
- * network `TypeError` (used by catalog queries to avoid swallowing RLS errors).
+ * Returns `true` when the browser reports offline, an error or its `cause` is
+ * a `TypeError`, or the error message matches a wrapped network/fetch failure
+ * (used by catalog queries to avoid swallowing RLS or query errors).
  */
 export function isOfflineNetworkError(error: unknown): boolean {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return true;
   }
-  return error instanceof TypeError;
+  if (error instanceof TypeError) {
+    return true;
+  }
+  if (typeof error === 'object' && error !== null) {
+    const candidate = error as { message?: unknown; cause?: unknown };
+    if (candidate.cause instanceof TypeError) {
+      return true;
+    }
+    if (
+      typeof candidate.message === 'string' &&
+      OFFLINE_NETWORK_ERROR_PATTERN.test(candidate.message)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

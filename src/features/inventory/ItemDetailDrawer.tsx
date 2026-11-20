@@ -113,9 +113,11 @@ export function ItemDetailDrawer({
   const photos = parseImages(activeItem?.image_filename);
 
   useEffect(() => {
-    setPhotoIndex(0);
-    setLightboxOpen(false);
-    setPhotoUploadError(null);
+    if (open && item?.id) {
+      setPhotoIndex(0);
+      setLightboxOpen(false);
+      setPhotoUploadError(null);
+    }
   }, [item?.id, open]);
 
   const canCheck = role === 'member' || role === 'admin';

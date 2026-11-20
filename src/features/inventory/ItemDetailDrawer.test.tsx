@@ -449,4 +449,102 @@ describe('ItemDetailDrawer', () => {
     });
     expect(screen.getByRole('dialog')).toBe(drawer);
   });
+
+  it('preserves active photo index during close exit animation and resets to photo 1 on reopen', async () => {
+    const user = userEvent.setup();
+    const realGetComputedStyle = window.getComputedStyle.bind(window);
+    const computedStyleSpy = vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) => {
+      const style = realGetComputedStyle(el, pseudo);
+      if (el instanceof HTMLElement && el.dataset.slot === 'sheet-content') {
+        return new Proxy(style, {
+          get(target, prop) {
+            if (prop === 'animationName') {
+              return el.dataset.state === 'closed' ? 'sheet-out-right' : 'sheet-in-right';
+            }
+            if (prop === 'getPropertyValue') {
+              return (name: string) =>
+                name === 'animation-name'
+                  ? el.dataset.state === 'closed'
+                    ? 'sheet-out-right'
+                    : 'sheet-in-right'
+                  : target.getPropertyValue(name);
+            }
+            const value = Reflect.get(target, prop, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+      }
+      return style;
+    });
+
+    try {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      mockUseAuth.mockReturnValue(makeAuthContext('guest'));
+
+      const multiPhotoItem = makeItem({
+        image_filename: '["https://cdn.example.com/p1.jpg","https://cdn.example.com/p2.jpg"]',
+      });
+
+      const { rerender } = render(
+        <QueryClientProvider client={queryClient}>
+          <ItemDetailDrawer
+            item={multiPhotoItem}
+            open={true}
+            onOpenChange={vi.fn()}
+            role="guest"
+            categories={sampleCategories}
+            locations={sampleLocations}
+            equipmentTypes={sampleEquipmentTypes}
+          />
+        </QueryClientProvider>
+      );
+
+      const drawer = screen.getByRole('dialog');
+      expect(within(drawer).getByAltText('Shure SM58 photo 1')).toBeInTheDocument();
+
+      await user.click(within(drawer).getByRole('button', { name: /next photo/i }));
+      expect(within(drawer).getByAltText('Shure SM58 photo 2')).toBeInTheDocument();
+
+      // Closing the drawer keeps the sheet mounted during exit animation and must stay on photo 2
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <ItemDetailDrawer
+            item={null}
+            open={false}
+            onOpenChange={vi.fn()}
+            role="guest"
+            categories={sampleCategories}
+            locations={sampleLocations}
+            equipmentTypes={sampleEquipmentTypes}
+          />
+        </QueryClientProvider>
+      );
+
+      const exitingSheet = document.body.querySelector('[data-slot="sheet-content"]');
+      expect(exitingSheet).toHaveAttribute('data-state', 'closed');
+      const exitingImage = exitingSheet?.querySelector('img[alt^="Shure SM58 photo "]') ?? null;
+      expect(exitingImage).toHaveAttribute('alt', 'Shure SM58 photo 2');
+
+      // Reopening resets back to photo 1
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <ItemDetailDrawer
+            item={multiPhotoItem}
+            open={true}
+            onOpenChange={vi.fn()}
+            role="guest"
+            categories={sampleCategories}
+            locations={sampleLocations}
+            equipmentTypes={sampleEquipmentTypes}
+          />
+        </QueryClientProvider>
+      );
+
+      expect(within(screen.getByRole('dialog')).getByAltText('Shure SM58 photo 1')).toBeInTheDocument();
+    } finally {
+      computedStyleSpy.mockRestore();
+    }
+  });
 });

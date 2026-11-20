@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import type { Category, EquipmentType, LocationRecord } from '@/types/database';
 import {
@@ -6,6 +6,7 @@ import {
   clearOfflineCache,
   getOfflineCacheKey,
   getOfflineSnapshotSavedAt,
+  isOfflineNetworkError,
   loadOfflineSnapshot,
   OFFLINE_CACHE_KEY_PREFIX,
   saveOfflineSnapshot,
@@ -194,5 +195,35 @@ describe('offlineCache', () => {
     expect(loadOfflineSnapshot('user-2')).toBeNull();
     expect(loadOfflineSnapshot('guest')).toBeNull();
     expect(localStorage.getItem('wingmacc_theme')).toBe('dark');
+  });
+
+  it('detects raw, caused, and wrapped supabase-js network errors during lie-fi (navigator.onLine === true) without swallowing permission errors', () => {
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    try {
+      expect(isOfflineNetworkError(new TypeError('Failed to fetch'))).toBe(true);
+      expect(isOfflineNetworkError(new Error('TypeError: Failed to fetch'))).toBe(true);
+      expect(isOfflineNetworkError({ message: 'Failed to fetch' })).toBe(true);
+      expect(
+        isOfflineNetworkError(new Error('Fetch wrapper', { cause: new TypeError('Network error') }))
+      ).toBe(true);
+      expect(isOfflineNetworkError(new Error('Load failed'))).toBe(true);
+      expect(
+        isOfflineNetworkError(new Error('NetworkError when attempting to fetch resource.'))
+      ).toBe(true);
+      expect(isOfflineNetworkError(new Error('Network request failed'))).toBe(true);
+      expect(isOfflineNetworkError(new Error('TypeError: fetch failed'))).toBe(true);
+      expect(isOfflineNetworkError(new Error('net::ERR_INTERNET_DISCONNECTED'))).toBe(true);
+
+      expect(isOfflineNetworkError(new Error('Permission denied'))).toBe(false);
+      expect(
+        isOfflineNetworkError({ message: 'new row violates row-level security policy' })
+      ).toBe(false);
+      expect(isOfflineNetworkError(null)).toBe(false);
+
+      onLineSpy.mockReturnValue(false);
+      expect(isOfflineNetworkError(new Error('Any error while offline'))).toBe(true);
+    } finally {
+      onLineSpy.mockRestore();
+    }
   });
 });

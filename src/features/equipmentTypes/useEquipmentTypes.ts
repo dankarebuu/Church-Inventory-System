@@ -174,8 +174,8 @@ function validateSortOrder(sortOrder: number): number {
 
 /**
  * Provides Admin-guarded CRUD mutations for equipment types, keeping
- * `inventory.equipment_type` text synced on renames and mapping Postgres
- * `23505` collisions into friendly duplicate-name errors.
+ * `inventory.equipment_type` text synced on renames and cleared on deletes
+ * while mapping Postgres `23505` collisions into friendly duplicate-name errors.
  */
 export function useEquipmentTypeMutations() {
   const { role } = useAuth();
@@ -307,12 +307,22 @@ export function useEquipmentTypeMutations() {
       assertCanMutate();
 
       const typeId = typeof target === 'string' ? target : target.id;
+      const { error: clearError } = await supabase
+        .from('inventory')
+        .update({ equipment_type_id: null, equipment_type: null })
+        .eq('equipment_type_id', typeId);
+
+      if (clearError) {
+        throw new Error(clearError.message);
+      }
+
       const { error } = await supabase
         .from('equipment_types')
         .delete()
         .eq('id', typeId);
 
       if (error) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) });
         throw new Error(error.message);
       }
 

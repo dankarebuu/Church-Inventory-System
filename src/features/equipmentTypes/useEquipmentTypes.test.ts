@@ -379,10 +379,63 @@ describe('useEquipmentTypeMutations', () => {
       result.current.updateEquipmentType({ id: 'et-mics', name: 'Instruments' })
     ).rejects.toThrow(/already exists/i);
 
+    updateCalls.length = 0;
     setResult('equipment_types:delete', { data: null, error: null });
     await result.current.deleteEquipmentType({ id: 'et-mics' });
+    expect(updateCalls).toEqual([
+      {
+        table: 'inventory',
+        payload: { equipment_type_id: null, equipment_type: null },
+        col: 'equipment_type_id',
+        id: 'et-mics',
+      },
+    ]);
     expect(deleteCalls).toEqual([{ table: 'equipment_types', col: 'id', id: 'et-mics' }]);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.equipmentTypes });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+  });
+
+  it('clears equipment_type & equipment_type_id on linked inventory rows before deleting equipment type and aborts on clear error', async () => {
+    const queryClient = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    setResult('inventory:update', { data: null, error: null });
+    setResult('equipment_types:delete', { data: null, error: null });
+
+    const { result } = renderHook(() => useEquipmentTypeMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await result.current.deleteEquipmentType('et-mics');
+
+    expect(mockFrom.mock.calls.map((call) => call[0])).toEqual([
+      'inventory',
+      'equipment_types',
+    ]);
+    expect(updateCalls).toEqual([
+      {
+        table: 'inventory',
+        payload: { equipment_type_id: null, equipment_type: null },
+        col: 'equipment_type_id',
+        id: 'et-mics',
+      },
+    ]);
+    expect(deleteCalls).toEqual([{ table: 'equipment_types', col: 'id', id: 'et-mics' }]);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.equipmentTypes });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
+
+    // If clearing linked inventory rows fails, do not delete the equipment_types row
+    vi.clearAllMocks();
+    updateCalls.length = 0;
+    deleteCalls.length = 0;
+    setResult('inventory:update', {
+      data: null,
+      error: { message: 'failed to clear inventory equipment type' },
+    });
+
+    await expect(result.current.deleteEquipmentType('et-inst')).rejects.toThrow(
+      /failed to clear inventory equipment type/i
+    );
+    expect(deleteCalls).toEqual([]);
   });
 });
