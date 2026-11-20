@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  AlertCircle,
   ArrowLeftRight,
+  Camera,
   ChevronLeft,
   ChevronRight,
   Edit2,
@@ -10,6 +12,7 @@ import {
   RotateCcw,
   Trash2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,11 +24,14 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { getCategoryColor } from '@/features/categories/useCategories';
+import { ItemCommentsSection } from '@/features/comments/ItemCommentsSection';
+import { getEquipmentTypeColor } from '@/features/equipmentTypes/useEquipmentTypes';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { isLoanOverdue } from '@/features/loans/schemas';
 import { cn, formatDisplayDate, parseImages } from '@/lib/utils';
 import type {
   Category,
+  EquipmentType,
   ItemCondition,
   LoanRecord,
   LocationRecord,
@@ -34,11 +40,14 @@ import type {
 import {
   CONDITION_META,
   formatLastCheckedDate,
+  isLowStock,
   resolveCategoryName,
+  resolveEquipmentTypeName,
   resolveLocationName,
   resolveSubcategoryName,
 } from './inventoryUi';
 import { QuickCheckButtons } from './QuickCheckButtons';
+import { MAX_GEAR_PHOTOS, validatePhotoFiles } from './schemas';
 import { ZoomLightbox } from './ZoomLightbox';
 
 export interface ItemDetailDrawerProps {
@@ -48,6 +57,7 @@ export interface ItemDetailDrawerProps {
   role: UserRole;
   categories: readonly Category[];
   locations?: readonly LocationRecord[];
+  equipmentTypes?: readonly EquipmentType[];
   onQuickCheck?: (item: EnrichedInventoryItem, condition: ItemCondition) => Promise<void> | void;
   isChecking?: boolean;
   onEdit?: (item: EnrichedInventoryItem) => void;
@@ -55,13 +65,18 @@ export interface ItemDetailDrawerProps {
   onCheckout?: (item: EnrichedInventoryItem) => void;
   onReturnLoan?: (loan: LoanRecord, item: EnrichedInventoryItem) => void;
   returningLoanId?: string | null;
+  onAddPhoto?: (item: EnrichedInventoryItem, file: File) => Promise<void> | void;
+  isUploadingPhoto?: boolean;
+  isOffline?: boolean;
 }
 
 const EMPTY_LOCATIONS: LocationRecord[] = [];
+const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
 
 /**
  * Slide-over equipment detail drawer with multi-photo carousel, ZoomLightbox
- * trigger, full specs, role-isolated loan details, quick checks, and CRUD actions.
+ * trigger, quick camera/photo upload, full specs, role-isolated loans & comments,
+ * quick checks, and CRUD actions.
  */
 export function ItemDetailDrawer({
   item,
@@ -70,6 +85,7 @@ export function ItemDetailDrawer({
   role,
   categories,
   locations = EMPTY_LOCATIONS,
+  equipmentTypes = EMPTY_EQUIPMENT_TYPES,
   onQuickCheck,
   isChecking = false,
   onEdit,
@@ -77,15 +93,21 @@ export function ItemDetailDrawer({
   onCheckout,
   onReturnLoan,
   returningLoanId = null,
+  onAddPhoto,
+  isUploadingPhoto = false,
+  isOffline = false,
 }: ItemDetailDrawerProps) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   const photos = parseImages(item?.image_filename);
 
   useEffect(() => {
     setPhotoIndex(0);
     setLightboxOpen(false);
+    setPhotoUploadError(null);
   }, [item?.id, open]);
 
   if (!item) return null;
@@ -96,14 +118,45 @@ export function ItemDetailDrawer({
   const categoryName = resolveCategoryName(item, categories);
   const subcategoryName = resolveSubcategoryName(item, categories);
   const locationName = resolveLocationName(item, locations);
+  const equipmentTypeName = resolveEquipmentTypeName(item, equipmentTypes);
+  const equipmentTypeColor = equipmentTypeName
+    ? getEquipmentTypeColor(equipmentTypeName, equipmentTypes, item.equipment_type_id)
+    : null;
+  const lowStock = isLowStock(item);
   const categoryColor = getCategoryColor(categoryName, categories, item.category_id);
   const safePhotoIndex = Math.min(photoIndex, Math.max(photos.length - 1, 0));
   const currentPhoto = photos[safePhotoIndex] ?? null;
   const activeLoans = item.activeLoans ?? [];
+  const canShowQuickPhoto = canCheck && photos.length < MAX_GEAR_PHOTOS;
 
   const stepPhoto = (delta: number) => {
     if (photos.length <= 1) return;
     setPhotoIndex((prev) => (prev + delta + photos.length) % photos.length);
+  };
+
+  const handleQuickPhotoSelected = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !canCheck || isOffline || isUploadingPhoto) return;
+
+    const validation = validatePhotoFiles([file], photos.length);
+    if (!validation.valid) {
+      const msg = validation.error ?? 'Invalid photo selection.';
+      setPhotoUploadError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    setPhotoUploadError(null);
+    if (!onAddPhoto) return;
+    try {
+      await onAddPhoto(item, file);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to upload photo.';
+      setPhotoUploadError(msg);
+    }
   };
 
   return (
@@ -143,6 +196,7 @@ export function ItemDetailDrawer({
             </span>
             <Badge variant={conditionMeta.badgeVariant}>{conditionMeta.label}</Badge>
             {item.qty_on_loan > 0 && <Badge variant="loaned">On Loan</Badge>}
+            {lowStock && <Badge variant="lowStock">Low Stock</Badge>}
           </div>
 
           <SheetTitle className="mt-1 text-xl">{item.item}</SheetTitle>
@@ -232,6 +286,49 @@ export function ItemDetailDrawer({
                 ))}
               </div>
             )}
+
+            {canShowQuickPhoto && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {photos.length} / {MAX_GEAR_PHOTOS} photos
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isUploadingPhoto || isOffline}
+                    onClick={() => photoInputRef.current?.click()}
+                  >
+                    {isUploadingPhoto ? (
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Camera className="size-3.5" aria-hidden="true" />
+                    )}
+                    <span>{isUploadingPhoto ? 'Uploading...' : 'Take / Add Photo'}</span>
+                  </Button>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    aria-label="Take or add equipment photo"
+                    disabled={isUploadingPhoto || isOffline}
+                    onChange={(event) => void handleQuickPhotoSelected(event)}
+                  />
+                </div>
+                {photoUploadError && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                  >
+                    <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                    <span>{photoUploadError}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Quick Condition Check (Member & Admin only) */}
@@ -291,6 +388,36 @@ export function ItemDetailDrawer({
                   {formatLastCheckedDate(item)}
                 </dd>
               </div>
+              <div>
+                <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Equipment Type
+                </dt>
+                <dd className="mt-0.5 font-medium text-foreground">
+                  {equipmentTypeName ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        aria-hidden="true"
+                        className="size-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: equipmentTypeColor ?? undefined }}
+                      />
+                      <span>{equipmentTypeName}</span>
+                    </span>
+                  ) : (
+                    '—'
+                  )}
+                </dd>
+              </div>
+              {item.min_qty !== null && item.min_qty !== undefined && (
+                <div>
+                  <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Min Stock Alert
+                  </dt>
+                  <dd className="mt-0.5 flex flex-wrap items-center gap-2 font-mono font-semibold text-foreground">
+                    <span>{item.min_qty}</span>
+                    {lowStock && <Badge variant="lowStock">Low Stock</Badge>}
+                  </dd>
+                </div>
+              )}
               {item.description && (
                 <div className="col-span-2 border-t border-border pt-3">
                   <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -420,6 +547,13 @@ export function ItemDetailDrawer({
               </div>
             )}
           </div>
+
+          {/* Per-item Notes & Maintenance Log (Member & Admin only) */}
+          {canCheck && (
+            <div className="border-t border-border pt-6">
+              <ItemCommentsSection itemId={item.id} isOffline={isOffline} />
+            </div>
+          )}
         </div>
 
         {canAdmin && (

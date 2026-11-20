@@ -23,6 +23,7 @@ import {
   ChevronsRight,
   Edit2,
   Eye,
+  MessageSquare,
   Trash2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -43,12 +44,24 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getCategoryColor } from '@/features/categories/useCategories';
+import {
+  DEFAULT_EQUIPMENT_TYPE_COLOR,
+  getEquipmentTypeColor,
+} from '@/features/equipmentTypes/useEquipmentTypes';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { cn } from '@/lib/utils';
-import type { Category, ItemCondition, LocationRecord, UserRole } from '@/types/database';
+import type {
+  Category,
+  EquipmentType,
+  ItemCondition,
+  LocationRecord,
+  UserRole,
+} from '@/types/database';
 import {
   CONDITION_META,
+  isLowStock,
   resolveCategoryName,
+  resolveEquipmentTypeName,
   resolveLocationName,
   resolveSubcategoryName,
 } from './inventoryUi';
@@ -59,6 +72,12 @@ export interface InventoryTableProps {
   role: UserRole;
   categories: readonly Category[];
   locations: readonly LocationRecord[];
+  equipmentTypes?: readonly EquipmentType[];
+  commentCounts?: Readonly<Record<string, number>>;
+  selectionMode?: boolean;
+  selectedIds?: ReadonlySet<string>;
+  onToggleSelect?: (itemId: string) => void;
+  onToggleSelectAll?: (itemIds: readonly string[], allSelected: boolean) => void;
   onSelectItem: (item: EnrichedInventoryItem) => void;
   onQuickCheck?: (item: EnrichedInventoryItem, condition: ItemCondition) => void;
   onEdit?: (item: EnrichedInventoryItem) => void;
@@ -81,15 +100,25 @@ const inventoryTableFeatures = tableFeatures({
 const columnHelper = createColumnHelper<typeof inventoryTableFeatures, EnrichedInventoryItem>();
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
+const EMPTY_COMMENT_COUNTS: Record<string, number> = {};
 
 /**
- * Sortable, paginated TanStack Table v9 view for inventory equipment.
+ * Sortable, paginated TanStack Table v9 view for inventory equipment with
+ * Equipment Type pills, Low Stock badges, comment count pills, and Admin
+ * multi-select checkboxes.
  */
 export function InventoryTable({
   items,
   role,
   categories,
   locations,
+  equipmentTypes = EMPTY_EQUIPMENT_TYPES,
+  commentCounts = EMPTY_COMMENT_COUNTS,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
   onSelectItem,
   onQuickCheck,
   onEdit,
@@ -106,10 +135,53 @@ export function InventoryTable({
   const canAdmin = role === 'admin';
 
   const data = useMemo(() => [...items], [items]);
+  const allItemIds = useMemo(() => items.map((entry) => entry.id), [items]);
+  const allSelected =
+    allItemIds.length > 0 && allItemIds.every((id) => Boolean(selectedIds?.has(id)));
+  const someSelected =
+    !allSelected && allItemIds.some((id) => Boolean(selectedIds?.has(id)));
 
   const columns = useMemo(
     () =>
       columnHelper.columns([
+        ...(selectionMode
+          ? [
+              columnHelper.display({
+                id: 'select',
+                header: () => (
+                  <div onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      ref={(el) => {
+                        if (el) {
+                          el.indeterminate = someSelected;
+                        }
+                      }}
+                      checked={allSelected}
+                      onChange={() => onToggleSelectAll?.(allItemIds, allSelected)}
+                      aria-label="Select all items"
+                      className="size-4 cursor-pointer rounded border-border accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </div>
+                ),
+                cell: ({ row }) => {
+                  const entry = row.original;
+                  const isSelected = Boolean(selectedIds?.has(entry.id));
+                  return (
+                    <div onClick={(event) => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelect?.(entry.id)}
+                        aria-label={`Select ${entry.item}`}
+                        className="size-4 cursor-pointer rounded border-border accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                    </div>
+                  );
+                },
+              }),
+            ]
+          : []),
         columnHelper.accessor('item', {
           header: 'Item',
           sortFn: 'alphanumeric',
@@ -121,7 +193,7 @@ export function InventoryTable({
               .join(' · ');
 
             return (
-              <div className="flex items-center gap-2.5 min-w-[190px]">
+              <div className="flex min-w-[190px] items-center gap-2.5">
                 <span
                   aria-hidden="true"
                   className="h-7 w-1 shrink-0 rounded-full"
@@ -140,6 +212,36 @@ export function InventoryTable({
           },
         }),
         columnHelper.accessor(
+          (row) => resolveEquipmentTypeName(row, equipmentTypes) ?? '',
+          {
+            id: 'equipment_type',
+            header: 'Type',
+            sortFn: 'alphanumeric',
+            cell: ({ row }) => {
+              const entry = row.original;
+              const typeName = resolveEquipmentTypeName(entry, equipmentTypes);
+              if (!typeName) {
+                return <span className="text-xs text-muted-foreground">—</span>;
+              }
+              const accent = getEquipmentTypeColor(
+                typeName,
+                equipmentTypes,
+                entry.equipment_type_id
+              );
+              return (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/60 px-2 py-0.5 font-mono text-[10px] font-medium text-foreground whitespace-nowrap">
+                  <span
+                    aria-hidden="true"
+                    className="size-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: accent || DEFAULT_EQUIPMENT_TYPE_COLOR }}
+                  />
+                  <span className="max-w-[140px] truncate">{typeName}</span>
+                </span>
+              );
+            },
+          }
+        ),
+        columnHelper.accessor(
           (row) => resolveCategoryName(row, categories),
           {
             id: 'category',
@@ -152,7 +254,7 @@ export function InventoryTable({
               const accent = getCategoryColor(categoryName, categories, entry.category_id);
 
               return (
-                <div className="flex flex-col gap-0.5 min-w-[130px]">
+                <div className="flex min-w-[130px] flex-col gap-0.5">
                   <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
                     <span
                       aria-hidden="true"
@@ -178,7 +280,7 @@ export function InventoryTable({
             header: 'Location',
             sortFn: 'alphanumeric',
             cell: ({ row }) => (
-              <span className="text-sm text-foreground whitespace-nowrap">
+              <span className="whitespace-nowrap text-sm text-foreground">
                 {resolveLocationName(row.original, locations)}
               </span>
             ),
@@ -197,12 +299,14 @@ export function InventoryTable({
           sortFn: 'basic',
           cell: ({ row }) => {
             const entry = row.original;
+            const lowStock = isLowStock(entry);
             return (
               <div className="flex flex-wrap items-center gap-1.5 whitespace-nowrap">
                 <span className="font-mono text-xs font-semibold text-foreground">
                   {`${entry.available_qty} / ${entry.qty}`}
                 </span>
                 {entry.qty_on_loan > 0 && <Badge variant="loaned">On Loan</Badge>}
+                {lowStock && <Badge variant="lowStock">Low Stock</Badge>}
               </div>
             );
           },
@@ -212,6 +316,9 @@ export function InventoryTable({
           header: () => <span className="sr-only sm:not-sr-only">Actions</span>,
           cell: ({ row }) => {
             const entry = row.original;
+            const commentCount =
+              role !== 'guest' ? (commentCounts[entry.id] ?? 0) : 0;
+
             return (
               <div
                 className="flex flex-wrap items-center justify-end gap-1.5"
@@ -224,6 +331,16 @@ export function InventoryTable({
                     disabled={isChecking}
                     layout="inline"
                   />
+                )}
+
+                {commentCount > 0 && (
+                  <span
+                    aria-label={`${commentCount} ${commentCount === 1 ? 'note' : 'notes'}`}
+                    className="inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                  >
+                    <MessageSquare className="size-3" aria-hidden="true" />
+                    <span>{commentCount}</span>
+                  </span>
                 )}
 
                 <Button
@@ -269,7 +386,27 @@ export function InventoryTable({
           },
         }),
       ]),
-    [canAdmin, canCheck, categories, isChecking, locations, onDelete, onEdit, onQuickCheck, onSelectItem]
+    [
+      allItemIds,
+      allSelected,
+      canAdmin,
+      canCheck,
+      categories,
+      commentCounts,
+      equipmentTypes,
+      isChecking,
+      locations,
+      onDelete,
+      onEdit,
+      onQuickCheck,
+      onSelectItem,
+      onToggleSelect,
+      onToggleSelectAll,
+      role,
+      selectedIds,
+      selectionMode,
+      someSelected,
+    ]
   );
 
   const table = useTable(
@@ -329,7 +466,10 @@ export function InventoryTable({
                             ? 'none'
                             : undefined
                     }
-                    className={cn(header.id === 'actions' && 'text-right')}
+                    className={cn(
+                      header.id === 'actions' && 'text-right',
+                      header.id === 'select' && 'w-10'
+                    )}
                   >
                     {header.isPlaceholder ? null : canSort ? (
                       <button
@@ -357,19 +497,29 @@ export function InventoryTable({
         </TableHeader>
 
         <TableBody>
-          {rows.map((row) => (
-            <TableRow
-              key={row.id}
-              onClick={() => onSelectItem(row.original)}
-              className="cursor-pointer"
-            >
-              {row.getAllCells().map((cell) => (
-                <TableCell key={cell.id}>
-                  <table.FlexRender cell={cell} />
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
+          {rows.map((row) => {
+            const isSelected = Boolean(selectionMode && selectedIds?.has(row.original.id));
+            return (
+              <TableRow
+                key={row.id}
+                onClick={() =>
+                  selectionMode && onToggleSelect
+                    ? onToggleSelect(row.original.id)
+                    : onSelectItem(row.original)
+                }
+                className={cn(
+                  'cursor-pointer',
+                  isSelected && 'bg-primary/[0.04]'
+                )}
+              >
+                {row.getAllCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    <table.FlexRender cell={cell} />
+                  </TableCell>
+                ))}
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
 

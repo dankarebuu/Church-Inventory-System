@@ -23,9 +23,10 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { sortCategories } from '@/features/categories/useCategories';
+import { sortEquipmentTypes } from '@/features/equipmentTypes/useEquipmentTypes';
 import { sortLocations } from '@/features/locations/useLocations';
 import { parseImages } from '@/lib/utils';
-import type { Category, LocationRecord } from '@/types/database';
+import type { Category, EquipmentType, LocationRecord } from '@/types/database';
 import {
   itemFormSchema,
   MAX_GEAR_PHOTOS,
@@ -45,6 +46,7 @@ export interface ItemFormDialogProps {
   item?: EnrichedInventoryItem | null;
   categories: readonly Category[];
   locations: readonly LocationRecord[];
+  equipmentTypes?: readonly EquipmentType[];
   onSave?: (input: SaveItemInput) => Promise<unknown>;
   isSaving?: boolean;
 }
@@ -56,11 +58,13 @@ interface PendingPhoto {
 }
 
 const NONE_OPTION = '__none__';
+const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
 
 function buildDefaultFormValues(
   item: EnrichedInventoryItem | null | undefined,
   topCategories: readonly Category[],
-  sortedLocations: readonly LocationRecord[]
+  sortedLocations: readonly LocationRecord[],
+  sortedEquipmentTypes: readonly EquipmentType[]
 ): ItemFormInput {
   if (!item) {
     return {
@@ -95,13 +99,21 @@ function buildDefaultFormValues(
       (l) => l.name.trim().toLowerCase() === (item.location ?? '').trim().toLowerCase()
     );
 
+  const matchedEquipmentType =
+    (item.equipment_type_id
+      ? sortedEquipmentTypes.find((et) => et.id === item.equipment_type_id)
+      : undefined) ??
+    sortedEquipmentTypes.find(
+      (et) => et.name.trim().toLowerCase() === (item.equipment_type ?? '').trim().toLowerCase()
+    );
+
   return {
     item: item.item,
     category: matchedCat?.name ?? item.category ?? '',
     category_id: matchedCat?.id ?? item.category_id ?? null,
     subcategory_id: item.subcategory_id ?? null,
-    equipment_type_id: item.equipment_type_id ?? null,
-    equipment_type: item.equipment_type ?? '',
+    equipment_type_id: matchedEquipmentType?.id ?? item.equipment_type_id ?? null,
+    equipment_type: matchedEquipmentType?.name ?? item.equipment_type ?? '',
     brand: item.brand ?? '',
     qty: item.qty ?? 0,
     min_qty: item.min_qty ?? null,
@@ -126,6 +138,7 @@ export function ItemFormDialog({
   item = null,
   categories,
   locations,
+  equipmentTypes = EMPTY_EQUIPMENT_TYPES,
   onSave,
   isSaving: externalIsSaving,
 }: ItemFormDialogProps) {
@@ -137,6 +150,10 @@ export function ItemFormDialog({
     [categories]
   );
   const sortedLocations = useMemo(() => sortLocations(locations), [locations]);
+  const sortedEquipmentTypes = useMemo(
+    () => sortEquipmentTypes(equipmentTypes),
+    [equipmentTypes]
+  );
 
   const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
@@ -169,11 +186,17 @@ export function ItemFormDialog({
     formState: { errors, isSubmitting },
   } = useForm<ItemFormInput, unknown, ItemFormValues>({
     resolver: zodResolver(itemFormSchema),
-    defaultValues: buildDefaultFormValues(item, topCategories, sortedLocations),
+    defaultValues: buildDefaultFormValues(
+      item,
+      topCategories,
+      sortedLocations,
+      sortedEquipmentTypes
+    ),
   });
 
   const selectedCategoryId = watch('category_id');
   const selectedCategoryText = watch('category');
+  const selectedEquipmentTypeText = watch('equipment_type');
 
   const subcategories = useMemo(() => {
     if (!selectedCategoryId) return [];
@@ -182,8 +205,18 @@ export function ItemFormDialog({
 
   const wasOpenRef = useRef(false);
   const initializedItemIdRef = useRef<string | null>(null);
-  const latestInitContextRef = useRef({ item, topCategories, sortedLocations });
-  latestInitContextRef.current = { item, topCategories, sortedLocations };
+  const latestInitContextRef = useRef({
+    item,
+    topCategories,
+    sortedLocations,
+    sortedEquipmentTypes,
+  });
+  latestInitContextRef.current = {
+    item,
+    topCategories,
+    sortedLocations,
+    sortedEquipmentTypes,
+  };
 
   const currentItemId = item?.id ?? null;
 
@@ -213,6 +246,7 @@ export function ItemFormDialog({
       item: latestItem,
       topCategories: latestTopCategories,
       sortedLocations: latestSortedLocations,
+      sortedEquipmentTypes: latestSortedEquipmentTypes,
     } = latestInitContextRef.current;
 
     revokeAllObjectUrls();
@@ -220,7 +254,14 @@ export function ItemFormDialog({
     setExistingPhotos(parseImages(latestItem?.image_filename));
     setPhotoError(null);
     setSubmitError(null);
-    reset(buildDefaultFormValues(latestItem, latestTopCategories, latestSortedLocations));
+    reset(
+      buildDefaultFormValues(
+        latestItem,
+        latestTopCategories,
+        latestSortedLocations,
+        latestSortedEquipmentTypes
+      )
+    );
   }, [open, currentItemId, reset, revokeAllObjectUrls]);
 
   useEffect(() => {
@@ -266,6 +307,18 @@ export function ItemFormDialog({
     const matched = sortedLocations.find((loc) => loc.id === nextVal);
     setValue('location_id', matched ? matched.id : null, { shouldDirty: true });
     setValue('location', matched ? matched.name : '', { shouldDirty: true });
+  };
+
+  const handleEquipmentTypeChange = (nextVal: string) => {
+    if (nextVal === NONE_OPTION) {
+      setValue('equipment_type_id', null, { shouldDirty: true });
+      setValue('equipment_type', '', { shouldDirty: true });
+      return;
+    }
+
+    const matched = sortedEquipmentTypes.find((et) => et.id === nextVal);
+    setValue('equipment_type_id', matched ? matched.id : null, { shouldDirty: true });
+    setValue('equipment_type', matched ? matched.name : '', { shouldDirty: true });
   };
 
   const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -320,11 +373,17 @@ export function ItemFormDialog({
     const matchedLoc = values.location_id
       ? sortedLocations.find((loc) => loc.id === values.location_id)
       : undefined;
+    const matchedEquipmentType = values.equipment_type_id
+      ? sortedEquipmentTypes.find((et) => et.id === values.equipment_type_id)
+      : undefined;
 
     const syncedValues: ItemFormValues = {
       ...values,
       category: matchedCat ? matchedCat.name : values.category,
       location: matchedLoc ? matchedLoc.name : values.location,
+      equipment_type: matchedEquipmentType
+        ? matchedEquipmentType.name
+        : values.equipment_type,
     };
 
     try {
@@ -466,6 +525,63 @@ export function ItemFormDialog({
             </div>
 
             <div className="grid gap-1.5">
+              <Label htmlFor="item-equipment-type-select">Equipment Type</Label>
+              <Controller
+                control={control}
+                name="equipment_type_id"
+                render={({ field }) => (
+                  <Select
+                    value={field.value ?? NONE_OPTION}
+                    onValueChange={handleEquipmentTypeChange}
+                  >
+                    <SelectTrigger id="item-equipment-type-select" aria-label="Equipment Type">
+                      <SelectValue placeholder="None / Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_OPTION}>None / Unassigned</SelectItem>
+                      {sortedEquipmentTypes.map((et) => (
+                        <SelectItem key={et.id} value={et.id}>
+                          {et.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {selectedEquipmentTypeText && !watch('equipment_type_id') && (
+                <p className="text-[11px] text-muted-foreground">
+                  Legacy type: {selectedEquipmentTypeText}
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="item-location-select">Storage Location</Label>
+              <Controller
+                control={control}
+                name="location_id"
+                render={({ field }) => (
+                  <Select
+                    value={field.value ?? NONE_OPTION}
+                    onValueChange={handleLocationChange}
+                  >
+                    <SelectTrigger id="item-location-select" aria-label="Location">
+                      <SelectValue placeholder="Select location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_OPTION}>Unassigned</SelectItem>
+                      {sortedLocations.map((loc) => (
+                        <SelectItem key={loc.id} value={loc.id}>
+                          {loc.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+
+            <div className="grid gap-1.5">
               <Label htmlFor="item-brand-input">Brand / Model</Label>
               <Input
                 id="item-brand-input"
@@ -498,6 +614,21 @@ export function ItemFormDialog({
             </div>
 
             <div className="grid gap-1.5">
+              <Label htmlFor="item-min-qty-input">Min Stock Alert</Label>
+              <Input
+                id="item-min-qty-input"
+                type="number"
+                min={0}
+                step={1}
+                placeholder="Optional threshold (blank = off)"
+                {...register('min_qty')}
+              />
+              {errors.min_qty && (
+                <p className="text-xs text-destructive">{errors.min_qty.message}</p>
+              )}
+            </div>
+
+            <div className="grid gap-1.5">
               <Label htmlFor="item-condition-select">Condition *</Label>
               <Controller
                 control={control}
@@ -511,32 +642,6 @@ export function ItemFormDialog({
                       <SelectItem value="working">Working</SelectItem>
                       <SelectItem value="repair">Needs Repair</SelectItem>
                       <SelectItem value="missing">Missing</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
-
-            <div className="grid gap-1.5">
-              <Label htmlFor="item-location-select">Storage Location</Label>
-              <Controller
-                control={control}
-                name="location_id"
-                render={({ field }) => (
-                  <Select
-                    value={field.value ?? NONE_OPTION}
-                    onValueChange={handleLocationChange}
-                  >
-                    <SelectTrigger id="item-location-select" aria-label="Location">
-                      <SelectValue placeholder="Select location" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE_OPTION}>Unassigned</SelectItem>
-                      {sortedLocations.map((loc) => (
-                        <SelectItem key={loc.id} value={loc.id}>
-                          {loc.name}
-                        </SelectItem>
-                      ))}
                     </SelectContent>
                   </Select>
                 )}

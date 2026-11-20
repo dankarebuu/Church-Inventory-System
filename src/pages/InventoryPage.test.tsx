@@ -4,9 +4,19 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextValue } from '@/features/auth/useAuth';
+import * as csvUtils from '@/features/importExport/csvUtils';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import type { Category, LocationRecord, UserRole } from '@/types/database';
-import { InventoryPage, VIEW_MODE_STORAGE_KEY } from './InventoryPage';
+import type {
+  Category,
+  EquipmentType,
+  LocationRecord,
+  UserRole,
+} from '@/types/database';
+import {
+  GROUP_BY_STORAGE_KEY,
+  InventoryPage,
+  VIEW_MODE_STORAGE_KEY,
+} from './InventoryPage';
 
 const mockUseAuth = vi.fn<() => AuthContextValue>();
 const mockUseInventoryItems = vi.fn<(role: UserRole) => {
@@ -18,11 +28,22 @@ const mockUseInventoryItems = vi.fn<(role: UserRole) => {
 }>();
 const mockUseCategories = vi.fn<() => { data: Category[]; isLoading: boolean }>();
 const mockUseLocations = vi.fn<() => { data: LocationRecord[]; isLoading: boolean }>();
+const mockUseEquipmentTypes = vi.fn<() => { data: EquipmentType[]; isLoading: boolean }>();
+const mockUseCommentCounts = vi.fn<(enabled: boolean) => { data: Record<string, number> }>();
 const mockMemberCheckItem = vi.fn();
 const mockSoftDeleteItem = vi.fn();
 const mockSaveItem = vi.fn();
+const mockAddItemPhoto = vi.fn();
+const mockBulkUpdateItems = vi.fn();
 const mockCheckoutItem = vi.fn();
 const mockReturnLoan = vi.fn();
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
 
 vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => mockUseAuth(),
@@ -40,10 +61,14 @@ vi.mock('@/features/inventory/useInventory', async () => {
       softDeleteItem: mockSoftDeleteItem,
       memberCheckItem: mockMemberCheckItem,
       uploadGearPhotos: vi.fn(),
+      addItemPhoto: mockAddItemPhoto,
+      bulkUpdateItems: mockBulkUpdateItems,
       isSaving: false,
       isDeleting: false,
       isChecking: false,
       isUploading: false,
+      isAddingPhoto: false,
+      isBulkUpdating: false,
     }),
   };
 });
@@ -65,6 +90,46 @@ vi.mock('@/features/locations/useLocations', async () => {
   return {
     ...actual,
     useLocations: () => mockUseLocations(),
+  };
+});
+
+vi.mock('@/features/equipmentTypes/useEquipmentTypes', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/features/equipmentTypes/useEquipmentTypes')
+  >('@/features/equipmentTypes/useEquipmentTypes');
+  return {
+    ...actual,
+    useEquipmentTypes: () => mockUseEquipmentTypes(),
+  };
+});
+
+vi.mock('@/features/comments/useItemComments', async () => {
+  const actual = await vi.importActual<typeof import('@/features/comments/useItemComments')>(
+    '@/features/comments/useItemComments'
+  );
+  return {
+    ...actual,
+    useCommentCounts: (enabled = true) => mockUseCommentCounts(enabled),
+    useItemComments: () => ({
+      data: [],
+      isLoading: false,
+      isFetching: false,
+      isSuccess: true,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }),
+    useCommentMutations: () => ({
+      addComment: vi.fn(),
+      updateComment: vi.fn(),
+      deleteComment: vi.fn(),
+      togglePinComment: vi.fn(),
+      isAdding: false,
+      isUpdating: false,
+      isDeleting: false,
+      isTogglingPin: false,
+      pendingCommentId: null,
+    }),
   };
 });
 
@@ -139,6 +204,25 @@ const sampleLocations: LocationRecord[] = [
     description: 'Sound Booth',
     sort_order: 20,
     created_at: '2026-11-18T00:00:00.000Z',
+  },
+];
+
+const sampleEquipmentTypes: EquipmentType[] = [
+  {
+    id: 'et-inst',
+    name: 'Instruments',
+    color: '#2563EB',
+    icon: 'guitar',
+    sort_order: 10,
+    created_at: '2026-11-20T00:00:00.000Z',
+  },
+  {
+    id: 'et-cables',
+    name: 'Cables & Cords',
+    color: '#4e7fb0',
+    icon: 'cable',
+    sort_order: 20,
+    created_at: '2026-11-20T00:00:00.000Z',
   },
 ];
 
@@ -256,10 +340,18 @@ function makeAuthValue(role: UserRole): AuthContextValue {
   };
 }
 
-function renderInventoryPage(role: UserRole, initialEntry = '/inventory') {
+function renderInventoryPage(
+  role: UserRole,
+  initialEntry = '/inventory',
+  options: {
+    items?: EnrichedInventoryItem[];
+    equipmentTypes?: EquipmentType[];
+    commentCounts?: Record<string, number>;
+  } = {}
+) {
   mockUseAuth.mockReturnValue(makeAuthValue(role));
   mockUseInventoryItems.mockReturnValue({
-    data: makeSampleItems(role),
+    data: options.items ?? makeSampleItems(role),
     isLoading: false,
     isError: false,
     error: null,
@@ -273,6 +365,13 @@ function renderInventoryPage(role: UserRole, initialEntry = '/inventory') {
     data: sampleLocations,
     isLoading: false,
   });
+  mockUseEquipmentTypes.mockReturnValue({
+    data: options.equipmentTypes ?? sampleEquipmentTypes,
+    isLoading: false,
+  });
+  mockUseCommentCounts.mockImplementation((enabled: boolean) => ({
+    data: enabled ? (options.commentCounts ?? {}) : {},
+  }));
 
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -320,6 +419,16 @@ describe('InventoryPage', () => {
     });
     mockSoftDeleteItem.mockResolvedValue(undefined);
     mockSaveItem.mockResolvedValue({});
+    mockAddItemPhoto.mockResolvedValue({
+      id: 'item-snare',
+      image_filename: '["https://cdn.example.com/snare.jpg","https://cdn.example.com/new.jpg"]',
+      photos: ['https://cdn.example.com/snare.jpg', 'https://cdn.example.com/new.jpg'],
+    });
+    mockBulkUpdateItems.mockResolvedValue({
+      updatedCount: 2,
+      skippedCount: 0,
+      updatedIds: ['item-snare', 'item-cable'],
+    });
     mockCheckoutItem.mockResolvedValue({});
     mockReturnLoan.mockResolvedValue({});
   });
@@ -490,8 +599,14 @@ describe('InventoryPage', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    // Grid view renders .band left borders and collapsible category headers
+    // Grid view defaults to Equipment Type grouping, renders .band left borders, and toggles cleanly to Rig grouping
     expect(document.querySelectorAll('.band').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /unassigned type/i })).toBeInTheDocument();
+
+    const rigToggleBtn = screen.getByRole('button', { name: /^rig$/i });
+    await user.click(rigToggleBtn);
+    expect(localStorage.getItem(GROUP_BY_STORAGE_KEY)).toBe('rig');
+
     const drumsHeaderBtn = screen.getByRole('button', { name: /drums/i });
     expect(drumsHeaderBtn).toHaveAttribute('aria-expanded', 'true');
     await user.click(drumsHeaderBtn);
@@ -584,6 +699,8 @@ describe('InventoryPage', () => {
     });
     mockUseCategories.mockReturnValue({ data: sampleCategories, isLoading: false });
     mockUseLocations.mockReturnValue({ data: sampleLocations, isLoading: false });
+    mockUseEquipmentTypes.mockReturnValue({ data: sampleEquipmentTypes, isLoading: false });
+    mockUseCommentCounts.mockReturnValue({ data: {} });
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -607,5 +724,169 @@ describe('InventoryPage', () => {
     const drawer = await screen.findByRole('dialog');
     expect(within(drawer).getByText('November 15, 2026')).toBeInTheDocument();
     expect(within(drawer).queryByText(/November 14, 2026/i)).not.toBeInTheDocument();
+  });
+
+  it('supports ?type=, ?stock=low, and ?photo=missing URL filters, Equipment Type grouping/pills, and Guest comment count isolation', async () => {
+    const user = userEvent.setup();
+    const typedItems: EnrichedInventoryItem[] = [
+      {
+        ...makeSampleItems('guest')[0],
+        equipment_type_id: 'et-inst',
+        equipment_type: 'Instruments',
+        qty: 2,
+        min_qty: 2, // low stock (2 <= 2)
+        image_filename: '["https://cdn.example.com/snare.jpg"]',
+      },
+      {
+        ...makeSampleItems('guest')[1],
+        equipment_type_id: 'et-cables',
+        equipment_type: 'Cables & Cords',
+        qty: 4,
+        min_qty: 1, // not low stock (4 > 1)
+        image_filename: null, // missing photo
+      },
+      {
+        ...makeSampleItems('guest')[1],
+        id: 'item-unassigned',
+        item: 'Mystery Stand',
+        equipment_type_id: null,
+        equipment_type: null,
+        qty: 3,
+        min_qty: null,
+        image_filename: null,
+      },
+    ];
+
+    // 1. Guest with ?type=et-inst sees Instruments only and NEVER queries/renders comment counts
+    const { unmount } = renderInventoryPage('guest', '/inventory?type=et-inst', {
+      items: typedItems,
+      commentCounts: { 'item-snare': 5 },
+    });
+
+    expect(mockUseCommentCounts).toHaveBeenCalledWith(false);
+    const snareCard = screen.getByText('Pearl Brass Snare').closest('article')!;
+    expect(snareCard).toBeInTheDocument();
+    expect(screen.queryByText('Mogami XLR Cable')).not.toBeInTheDocument();
+    expect(within(snareCard).getByText('Low Stock')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/5 notes/i)).not.toBeInTheDocument();
+    unmount();
+
+    // 2. Member sees comment count badges, Equipment Type groups sorted cleanly, and ?stock=low + ?photo=missing toggles
+    renderInventoryPage('member', '/inventory?stock=low', {
+      items: typedItems,
+      commentCounts: { 'item-snare': 3 },
+    });
+
+    expect(mockUseCommentCounts).toHaveBeenCalledWith(true);
+    expect(screen.getByText('Pearl Brass Snare')).toBeInTheDocument();
+    expect(screen.queryByText('Mogami XLR Cable')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('3 notes')).toBeInTheDocument();
+
+    // Clear filters restores all 3 items across Equipment Type groups (Instruments, Cables & Cords, Unassigned Type)
+    await user.click(screen.getByRole('button', { name: /clear filters/i }));
+    expect(screen.getByRole('button', { name: /instruments/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /cables & cords/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /unassigned type/i })).toBeInTheDocument();
+
+    // Filter to ?photo=missing via quick toggle pill
+    await user.click(screen.getByRole('button', { name: /missing photos/i }));
+    expect(screen.queryByText('Pearl Brass Snare')).not.toBeInTheDocument();
+    expect(screen.getByText('Mogami XLR Cable')).toBeInTheDocument();
+    expect(screen.getByText('Mystery Stand')).toBeInTheDocument();
+
+    // Filter to Unassigned Type via Equipment Type dropdown
+    await user.click(screen.getByRole('button', { name: /clear filters/i }));
+    await user.click(screen.getByRole('combobox', { name: /filter by equipment type/i }));
+    await user.click(await screen.findByRole('option', { name: /unassigned type/i }));
+    expect(screen.queryByText('Pearl Brass Snare')).not.toBeInTheDocument();
+    expect(screen.queryByText('Mogami XLR Cable')).not.toBeInTheDocument();
+    expect(screen.getByText('Mystery Stand')).toBeInTheDocument();
+
+    // Member cannot enter multi-select mode
+    expect(screen.queryByRole('button', { name: /select items/i })).not.toBeInTheDocument();
+  });
+
+  it('supports Admin multi-select in Grid and Table views, BulkAssignDialog workflow, CSV export with equipmentTypes, and drawer Take / Add Photo', async () => {
+    const user = userEvent.setup();
+    const exportCsvSpy = vi
+      .spyOn(csvUtils, 'exportItemsToCSV')
+      .mockReturnValue('mock-csv');
+
+    const adminItems = makeSampleItems('admin').map((entry, idx) => ({
+      ...entry,
+      equipment_type_id: idx === 0 ? 'et-inst' : null,
+      equipment_type: idx === 0 ? 'Instruments' : null,
+      min_qty: idx === 1 ? 4 : null,
+    }));
+
+    renderInventoryPage('admin', '/inventory', {
+      items: adminItems,
+      commentCounts: { 'item-snare': 2 },
+    });
+
+    // Export CSV passes equipmentTypes option
+    await user.click(screen.getByRole('button', { name: /^export$/i }));
+    await user.click(await screen.findByRole('menuitem', { name: /export csv/i }));
+    expect(exportCsvSpy).toHaveBeenCalledWith(
+      adminItems,
+      expect.any(Array),
+      sampleCategories,
+      { equipmentTypes: sampleEquipmentTypes }
+    );
+    exportCsvSpy.mockRestore();
+
+    // Enter Admin multi-select mode -> select all filtered -> sticky bar -> Bulk Assign -> submits & clears selection
+    await user.click(screen.getByRole('button', { name: /select items/i }));
+    await user.click(screen.getByRole('button', { name: /select all filtered/i }));
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /bulk assign/i }));
+    const bulkDialog = await screen.findByRole('dialog', { name: /bulk assign equipment/i });
+    await user.click(within(bulkDialog).getByRole('combobox', { name: /equipment type/i }));
+    await user.click(await screen.findByRole('option', { name: 'Cables & Cords' }));
+    await user.click(within(bulkDialog).getByRole('button', { name: /apply/i }));
+
+    await waitFor(() => {
+      expect(mockBulkUpdateItems).toHaveBeenCalledWith({
+        itemIds: ['item-snare', 'item-cable'],
+        equipment_type_id: 'et-cables',
+        equipment_type: 'Cables & Cords',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('2 selected')).not.toBeInTheDocument();
+    });
+
+    // Switch to Table View and verify Equipment Type pill, Low Stock badge, comment count, and select-all header checkbox
+    await user.click(screen.getByRole('button', { name: /table/i }));
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('Instruments')).toBeInTheDocument();
+    expect(within(table).getByText('Low Stock')).toBeInTheDocument();
+    expect(within(table).getByLabelText('2 notes')).toBeInTheDocument();
+
+    const selectAllHeader = within(table).getByRole('checkbox', {
+      name: /select all items/i,
+    });
+    await user.click(selectAllHeader);
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /select items/i }));
+    expect(screen.queryByText('2 selected')).not.toBeInTheDocument();
+
+    // Open ItemDetailDrawer via View button and trigger Take / Add Photo
+    await user.click(within(table).getByRole('button', { name: /view pearl brass snare/i }));
+    const drawer = await screen.findByRole('dialog');
+    const photoInput = drawer.querySelector('input[type="file"]') as HTMLInputElement;
+    const photoFile = new File(['cam-img'], 'snare-top.jpg', { type: 'image/jpeg' });
+    await user.upload(photoInput, photoFile);
+
+    await waitFor(() => {
+      expect(mockAddItemPhoto).toHaveBeenCalledWith({
+        itemId: 'item-snare',
+        file: photoFile,
+        existingPhotoCount: 1,
+      });
+    });
   });
 });

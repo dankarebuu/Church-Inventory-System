@@ -1,10 +1,14 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
+  CheckSquare,
   ChevronDown,
   Download,
   FileJson,
   FileSpreadsheet,
+  ImageOff,
+  Layers,
   LayoutGrid,
   Loader2,
   PackageOpen,
@@ -47,13 +51,26 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/features/auth/useAuth';
 import { sortCategories, useCategories } from '@/features/categories/useCategories';
+import { useCommentCounts } from '@/features/comments/useItemComments';
+import {
+  sortEquipmentTypes,
+  useEquipmentTypes,
+} from '@/features/equipmentTypes/useEquipmentTypes';
 import {
   exportItemsToCSV,
   exportItemsToJSON,
 } from '@/features/importExport/csvUtils';
 import { ImportWizardDialog } from '@/features/importExport/ImportWizardDialog';
-import { InventoryGrid } from '@/features/inventory/InventoryGrid';
+import { BulkAssignDialog } from '@/features/inventory/BulkAssignDialog';
+import {
+  InventoryGrid,
+  type InventoryGroupBy,
+} from '@/features/inventory/InventoryGrid';
 import { InventoryTable } from '@/features/inventory/InventoryTable';
+import {
+  isLowStock,
+  resolveEquipmentTypeName,
+} from '@/features/inventory/inventoryUi';
 import { ItemDetailDrawer } from '@/features/inventory/ItemDetailDrawer';
 import { ItemFormDialog } from '@/features/inventory/ItemFormDialog';
 import {
@@ -65,8 +82,10 @@ import { CheckoutDialog } from '@/features/loans/CheckoutDialog';
 import { useLoanMutations } from '@/features/loans/useLoans';
 import { sortLocations, useLocations } from '@/features/locations/useLocations';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { parseImages, trimOrNull } from '@/lib/utils';
 import type {
   Category,
+  EquipmentType,
   HistoryEntry,
   ItemCondition,
   LoanRecord,
@@ -74,13 +93,18 @@ import type {
 } from '@/types/database';
 
 export const VIEW_MODE_STORAGE_KEY = 'wingmacc_view_mode';
+export const GROUP_BY_STORAGE_KEY = 'wingmacc_group_by';
 
 export type InventoryViewMode = 'grid' | 'table';
+export type { InventoryGroupBy };
 
 const ALL_OPTION = '__all__';
+const UNASSIGNED_TYPE_OPTION = '__unassigned__';
 const EMPTY_ITEMS: EnrichedInventoryItem[] = [];
 const EMPTY_CATEGORIES: Category[] = [];
 const EMPTY_LOCATIONS: LocationRecord[] = [];
+const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
+const EMPTY_COMMENT_COUNTS: Record<string, number> = {};
 
 export interface InventoryPageProps {
   headerActions?: ReactNode;
@@ -110,6 +134,30 @@ function persistViewMode(mode: InventoryViewMode): void {
   }
 }
 
+function readInitialGroupBy(): InventoryGroupBy {
+  try {
+    if (typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem(GROUP_BY_STORAGE_KEY);
+      if (stored === 'rig' || stored === 'type') {
+        return stored;
+      }
+    }
+  } catch {
+    // Ignore storage read errors in restricted browser contexts.
+  }
+  return 'type';
+}
+
+function persistGroupBy(mode: InventoryGroupBy): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(GROUP_BY_STORAGE_KEY, mode);
+    }
+  } catch {
+    // Ignore storage write errors in restricted browser contexts.
+  }
+}
+
 function normalizeConditionFilter(raw: string | null): string {
   if (raw === 'working' || raw === 'repair' || raw === 'missing' || raw === 'flagged') {
     return raw;
@@ -123,10 +171,21 @@ function normalizeLoanFilter(raw: string | null): string {
   return ALL_OPTION;
 }
 
+function normalizeStockFilter(raw: string | null): string {
+  if (raw === 'low') return 'low';
+  return ALL_OPTION;
+}
+
+function normalizePhotoFilter(raw: string | null): string {
+  if (raw === 'missing') return 'missing';
+  return ALL_OPTION;
+}
+
 /**
- * Main Inventory catalog route supporting multi-facet URL-synced filters,
- * Grid/Table view toggle, Detail Drawer + ZoomLightbox, quick Member checks,
- * and Admin Add/Edit/Trash workflows.
+ * Main Inventory catalog route supporting multi-facet URL-synced filters
+ * (including Equipment Type, Low Stock, and Missing Photos), Equipment Type /
+ * Rig grouping, Grid/Table views, Detail Drawer + quick camera upload & notes,
+ * quick Member checks, and Admin multi-select Bulk Assign / CRUD workflows.
  */
 export function InventoryPage({ headerActions }: InventoryPageProps) {
   const { role } = useAuth();
@@ -142,15 +201,25 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
   } = useInventoryItems(role);
   const { data: categories = EMPTY_CATEGORIES } = useCategories();
   const { data: locations = EMPTY_LOCATIONS } = useLocations();
+  const { data: equipmentTypes = EMPTY_EQUIPMENT_TYPES } = useEquipmentTypes();
+  const { data: commentCounts = EMPTY_COMMENT_COUNTS } = useCommentCounts(role !== 'guest');
+
   const {
     softDeleteItem,
     memberCheckItem,
+    addItemPhoto,
     isDeleting,
     isChecking,
+    isAddingPhoto,
   } = useItemMutations();
   const { checkoutItem, returnLoan, isCheckingOut } = useLoanMutations();
 
   const [viewMode, setViewMode] = useState<InventoryViewMode>(readInitialViewMode);
+  const [groupBy, setGroupBy] = useState<InventoryGroupBy>(readInitialGroupBy);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
+
   const [formOpen, setFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<EnrichedInventoryItem | null>(null);
   const [pendingDeleteItem, setPendingDeleteItem] = useState<EnrichedInventoryItem | null>(null);
@@ -161,22 +230,69 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
   const [returningLoanId, setReturningLoanId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [isExportingJson, setIsExportingJson] = useState(false);
+  const [isOffline, setIsOffline] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine === false : false
+  );
 
   const canCheck = role === 'member' || role === 'admin';
   const canAdmin = role === 'admin';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => setIsOffline(false);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!canAdmin) {
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+      setBulkAssignOpen(false);
+    }
+  }, [canAdmin]);
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIds = new Set(items.map((entry) => entry.id));
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (validIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [items]);
 
   const topCategories = useMemo(
     () => sortCategories(categories.filter((cat) => cat.parent_id === null)),
     [categories]
   );
   const sortedLocations = useMemo(() => sortLocations(locations), [locations]);
+  const sortedEquipmentTypes = useMemo(
+    () => sortEquipmentTypes(equipmentTypes),
+    [equipmentTypes]
+  );
 
   const rawSearch = searchParams.get('q') ?? '';
   const rawCategoryParam = searchParams.get('category');
   const rawSubcategoryParam = searchParams.get('subcategory');
+  const rawTypeParam = searchParams.get('type');
   const rawLocationParam = searchParams.get('location');
   const conditionFilter = normalizeConditionFilter(searchParams.get('condition'));
   const loanFilter = normalizeLoanFilter(searchParams.get('loan'));
+  const stockFilter = normalizeStockFilter(searchParams.get('stock'));
+  const photoFilter = normalizePhotoFilter(searchParams.get('photo'));
   const activeItemId = searchParams.get('item');
 
   const resolvedCategoryId = useMemo(() => {
@@ -199,6 +315,19 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     const valid = filterSubcategories.find((sub) => sub.id === rawSubcategoryParam);
     return valid ? valid.id : ALL_OPTION;
   }, [rawSubcategoryParam, filterSubcategories]);
+
+  const resolvedTypeId = useMemo(() => {
+    if (!rawTypeParam) return ALL_OPTION;
+    if (rawTypeParam === UNASSIGNED_TYPE_OPTION || rawTypeParam === 'unassigned') {
+      return UNASSIGNED_TYPE_OPTION;
+    }
+    const byId = sortedEquipmentTypes.find((et) => et.id === rawTypeParam);
+    if (byId) return byId.id;
+    const byName = sortedEquipmentTypes.find(
+      (et) => et.name.trim().toLowerCase() === rawTypeParam.trim().toLowerCase()
+    );
+    return byName ? byName.id : rawTypeParam;
+  }, [rawTypeParam, sortedEquipmentTypes]);
 
   const resolvedLocationId = useMemo(() => {
     if (!rawLocationParam) return ALL_OPTION;
@@ -227,6 +356,11 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
   const handleViewModeChange = (mode: InventoryViewMode) => {
     setViewMode(mode);
     persistViewMode(mode);
+  };
+
+  const handleGroupByChange = (mode: InventoryGroupBy) => {
+    setGroupBy(mode);
+    persistGroupBy(mode);
   };
 
   const handleSearchChange = (value: string) => {
@@ -267,6 +401,16 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     });
   };
 
+  const handleTypeFilterChange = (value: string) => {
+    updateParams((next) => {
+      if (value === ALL_OPTION) {
+        next.delete('type');
+      } else {
+        next.set('type', value);
+      }
+    });
+  };
+
   const handleLocationFilterChange = (value: string) => {
     updateParams((next) => {
       if (value === ALL_OPTION) {
@@ -297,14 +441,37 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     });
   };
 
+  const handleToggleStockFilter = () => {
+    updateParams((next) => {
+      if (stockFilter === 'low') {
+        next.delete('stock');
+      } else {
+        next.set('stock', 'low');
+      }
+    });
+  };
+
+  const handleTogglePhotoFilter = () => {
+    updateParams((next) => {
+      if (photoFilter === 'missing') {
+        next.delete('photo');
+      } else {
+        next.set('photo', 'missing');
+      }
+    });
+  };
+
   const handleClearFilters = () => {
     updateParams((next) => {
       next.delete('q');
       next.delete('category');
       next.delete('subcategory');
+      next.delete('type');
       next.delete('location');
       next.delete('condition');
       next.delete('loan');
+      next.delete('stock');
+      next.delete('photo');
     });
   };
 
@@ -312,9 +479,12 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     rawSearch.trim() ||
       rawCategoryParam ||
       rawSubcategoryParam ||
+      rawTypeParam ||
       rawLocationParam ||
       conditionFilter !== ALL_OPTION ||
-      loanFilter !== ALL_OPTION
+      loanFilter !== ALL_OPTION ||
+      stockFilter !== ALL_OPTION ||
+      photoFilter !== ALL_OPTION
   );
 
   const filteredItems = useMemo(() => {
@@ -323,6 +493,11 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       resolvedCategoryId !== ALL_OPTION
         ? topCategories.find((c) => c.id === resolvedCategoryId)
         : undefined;
+    const matchedTypeObj =
+      resolvedTypeId !== ALL_OPTION && resolvedTypeId !== UNASSIGNED_TYPE_OPTION
+        ? sortedEquipmentTypes.find((et) => et.id === resolvedTypeId)
+        : undefined;
+    const knownTypeIds = new Set(sortedEquipmentTypes.map((et) => et.id));
     const matchedLocationObj =
       resolvedLocationId !== ALL_OPTION
         ? sortedLocations.find((l) => l.id === resolvedLocationId)
@@ -332,13 +507,32 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       if (resolvedCategoryId !== ALL_OPTION) {
         const matchesId = item.category_id === resolvedCategoryId;
         const matchesName = matchedCategoryObj
-          ? item.category.trim().toLowerCase() === matchedCategoryObj.name.trim().toLowerCase()
+          ? item.category.trim().toLowerCase() ===
+            matchedCategoryObj.name.trim().toLowerCase()
           : item.category.trim().toLowerCase() === resolvedCategoryId.trim().toLowerCase();
         if (!matchesId && !matchesName) return false;
       }
 
       if (resolvedSubcategoryId !== ALL_OPTION) {
         if (item.subcategory_id !== resolvedSubcategoryId) return false;
+      }
+
+      if (resolvedTypeId === UNASSIGNED_TYPE_OPTION) {
+        if (item.equipment_type_id || trimOrNull(item.equipment_type)) return false;
+      } else if (resolvedTypeId !== ALL_OPTION) {
+        const matchesTypeId = item.equipment_type_id === resolvedTypeId;
+        const hasOtherKnownTypeId = Boolean(
+          item.equipment_type_id &&
+            item.equipment_type_id !== resolvedTypeId &&
+            knownTypeIds.has(item.equipment_type_id)
+        );
+        const itemTypeText = trimOrNull(item.equipment_type)?.toLowerCase() ?? '';
+        const matchesTypeName =
+          !hasOtherKnownTypeId &&
+          (matchedTypeObj
+            ? itemTypeText === matchedTypeObj.name.trim().toLowerCase()
+            : itemTypeText === resolvedTypeId.trim().toLowerCase());
+        if (!matchesTypeId && !matchesTypeName) return false;
       }
 
       if (resolvedLocationId !== ALL_OPTION) {
@@ -362,15 +556,25 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         if (item.available_qty <= 0) return false;
       }
 
+      if (stockFilter === 'low' && !isLowStock(item)) {
+        return false;
+      }
+
+      if (photoFilter === 'missing' && parseImages(item.image_filename).length > 0) {
+        return false;
+      }
+
       if (query) {
         const subName = item.subcategory_id
           ? categories.find((c) => c.id === item.subcategory_id)?.name ?? ''
           : '';
+        const typeName = resolveEquipmentTypeName(item, sortedEquipmentTypes) ?? '';
         const searchableParts = [
           item.item,
           item.brand,
           item.category,
           subName,
+          typeName,
           item.location,
           item.owner,
           item.serial,
@@ -394,10 +598,14 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     rawSearch,
     resolvedCategoryId,
     resolvedSubcategoryId,
+    resolvedTypeId,
     resolvedLocationId,
     conditionFilter,
     loanFilter,
+    stockFilter,
+    photoFilter,
     topCategories,
+    sortedEquipmentTypes,
     sortedLocations,
     categories,
     canCheck,
@@ -412,11 +620,13 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
     let totalUnits = 0;
     let flaggedCount = 0;
     let onLoanCount = 0;
+    let lowStockCount = 0;
 
     for (const entry of filteredItems) {
       totalUnits += entry.qty;
       if (entry.condition !== 'working') flaggedCount += 1;
       if (entry.qty_on_loan > 0) onLoanCount += 1;
+      if (isLowStock(entry)) lowStockCount += 1;
     }
 
     return {
@@ -424,8 +634,59 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       totalUnits,
       flaggedCount,
       onLoanCount,
+      lowStockCount,
     };
   }, [filteredItems]);
+
+  const handleToggleSelectionMode = () => {
+    if (!canAdmin) return;
+    setSelectionMode((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSelectedIds(new Set());
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelect = useCallback((itemId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectAllFiltered = useCallback(() => {
+    setSelectedIds(new Set(filteredItems.map((entry) => entry.id)));
+  }, [filteredItems]);
+
+  const handleToggleSelectAllTable = useCallback(
+    (itemIds: readonly string[], allCurrentlySelected: boolean) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (allCurrentlySelected) {
+          for (const id of itemIds) {
+            next.delete(id);
+          }
+        } else {
+          for (const id of itemIds) {
+            next.add(id);
+          }
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
 
   const handleOpenItem = useCallback(
     (item: EnrichedInventoryItem) => {
@@ -463,6 +724,27 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       }
     },
     [canCheck, memberCheckItem]
+  );
+
+  const handleAddDrawerPhoto = useCallback(
+    async (item: EnrichedInventoryItem, file: File) => {
+      if (!canCheck) return;
+      const existingCount = parseImages(item.image_filename).length;
+      try {
+        await addItemPhoto({
+          itemId: item.id,
+          file,
+          existingPhotoCount: existingCount,
+        });
+        toast.success(`Added photo to "${item.item}".`);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Unable to upload photo.';
+        toast.error(message);
+        throw err;
+      }
+    },
+    [addItemPhoto, canCheck]
   );
 
   const handleOpenAdd = () => {
@@ -531,7 +813,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
   const handleExportCsv = () => {
     if (!canAdmin) return;
     const activeLoans = items.flatMap((entry) => entry.activeLoans ?? []);
-    exportItemsToCSV(items, activeLoans, categories);
+    exportItemsToCSV(items, activeLoans, categories, { equipmentTypes });
     toast.success(`Exported ${items.length} ${items.length === 1 ? 'item' : 'items'} as CSV.`);
   };
 
@@ -561,6 +843,9 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       setIsExportingJson(false);
     }
   };
+
+  const visibleCommentCounts = role !== 'guest' ? commentCounts : EMPTY_COMMENT_COUNTS;
+  const selectedIdsArray = useMemo(() => [...selectedIds], [selectedIds]);
 
   return (
     <section className="mx-auto max-w-7xl space-y-6">
@@ -612,6 +897,18 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           {canAdmin && headerActions}
 
           {canAdmin && (
+            <Button
+              type="button"
+              variant={selectionMode ? 'default' : 'outline'}
+              aria-pressed={selectionMode}
+              onClick={handleToggleSelectionMode}
+            >
+              <CheckSquare className="size-4" aria-hidden="true" />
+              <span>Select Items</span>
+            </Button>
+          )}
+
+          {canAdmin && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" disabled={isExportingJson}>
@@ -659,8 +956,8 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       </div>
 
       {/* Multi-facet Filter Bar */}
-      <div className="rounded-xl border border-border bg-card p-4 shadow-card space-y-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-card">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
           <div className="relative sm:col-span-2 lg:col-span-2">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -675,6 +972,21 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
               className="pl-9"
             />
           </div>
+
+          <Select value={resolvedTypeId} onValueChange={handleTypeFilterChange}>
+            <SelectTrigger aria-label="Filter by equipment type">
+              <SelectValue placeholder="All Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_OPTION}>All Types</SelectItem>
+              <SelectItem value={UNASSIGNED_TYPE_OPTION}>Unassigned Type</SelectItem>
+              {sortedEquipmentTypes.map((et) => (
+                <SelectItem key={et.id} value={et.id}>
+                  {et.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           <Select value={resolvedCategoryId} onValueChange={handleCategoryFilterChange}>
             <SelectTrigger aria-label="Filter by category">
@@ -696,11 +1008,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             disabled={filterSubcategories.length === 0}
           >
             <SelectTrigger aria-label="Filter by subcategory">
-              <SelectValue
-                placeholder={
-                  filterSubcategories.length === 0 ? 'All Subcategories' : 'All Subcategories'
-                }
-              />
+              <SelectValue placeholder="All Subcategories" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL_OPTION}>All Subcategories</SelectItem>
@@ -753,33 +1061,123 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           </div>
         </div>
 
-        {/* Filter Summary & Clear */}
+        {/* Quick Cleanup Toggles, Group-By Segmented Control & Selection Bar */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs">
-          <div className="flex flex-wrap items-center gap-2 font-mono text-muted-foreground">
-            <span>
-              {summaryStats.itemCount} {summaryStats.itemCount === 1 ? 'item' : 'items'} (
-              {summaryStats.totalUnits} {summaryStats.totalUnits === 1 ? 'unit' : 'units'})
-            </span>
-            {summaryStats.flaggedCount > 0 && (
-              <Badge variant="repair">{summaryStats.flaggedCount} Flagged</Badge>
-            )}
-            {summaryStats.onLoanCount > 0 && (
-              <Badge variant="loaned">{summaryStats.onLoanCount} On Loan</Badge>
-            )}
-          </div>
-
-          {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
-              variant="ghost"
               size="sm"
-              onClick={handleClearFilters}
-              className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+              variant={stockFilter === 'low' ? 'default' : 'outline'}
+              aria-pressed={stockFilter === 'low'}
+              onClick={handleToggleStockFilter}
+              className="h-7 px-2.5 text-xs"
             >
-              <X className="size-3.5" aria-hidden="true" />
-              <span>Clear Filters</span>
+              <AlertTriangle className="size-3.5" aria-hidden="true" />
+              <span>Low Stock</span>
             </Button>
-          )}
+
+            <Button
+              type="button"
+              size="sm"
+              variant={photoFilter === 'missing' ? 'default' : 'outline'}
+              aria-pressed={photoFilter === 'missing'}
+              onClick={handleTogglePhotoFilter}
+              className="h-7 px-2.5 text-xs"
+            >
+              <ImageOff className="size-3.5" aria-hidden="true" />
+              <span>Missing Photos</span>
+            </Button>
+
+            <div className="flex flex-wrap items-center gap-2 pl-1 font-mono text-muted-foreground">
+              <span>
+                {summaryStats.itemCount} {summaryStats.itemCount === 1 ? 'item' : 'items'} (
+                {summaryStats.totalUnits} {summaryStats.totalUnits === 1 ? 'unit' : 'units'})
+              </span>
+              {summaryStats.flaggedCount > 0 && (
+                <Badge variant="repair">{summaryStats.flaggedCount} Flagged</Badge>
+              )}
+              {summaryStats.onLoanCount > 0 && (
+                <Badge variant="loaned">{summaryStats.onLoanCount} On Loan</Badge>
+              )}
+              {summaryStats.lowStockCount > 0 && (
+                <Badge variant="lowStock">{summaryStats.lowStockCount} Low Stock</Badge>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {canAdmin && selectionMode && (
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={filteredItems.length === 0}
+                  onClick={handleSelectAllFiltered}
+                  className="h-7 px-2.5 text-xs"
+                >
+                  Select All Filtered
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={selectedIds.size === 0}
+                  onClick={handleClearSelection}
+                  className="h-7 px-2.5 text-xs"
+                >
+                  Clear
+                </Button>
+              </div>
+            )}
+
+            {viewMode === 'grid' && (
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Group by:
+                </span>
+                <div
+                  role="group"
+                  aria-label="Group grid items by"
+                  className="inline-flex rounded-lg border border-border bg-secondary/40 p-0.5"
+                >
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={groupBy === 'type' ? 'default' : 'ghost'}
+                    aria-pressed={groupBy === 'type'}
+                    onClick={() => handleGroupByChange('type')}
+                    className="h-6 px-2 text-[11px]"
+                  >
+                    Equipment Type
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={groupBy === 'rig' ? 'default' : 'ghost'}
+                    aria-pressed={groupBy === 'rig'}
+                    onClick={() => handleGroupByChange('rig')}
+                    className="h-6 px-2 text-[11px]"
+                  >
+                    Rig
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {hasActiveFilters && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClearFilters}
+                className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" aria-hidden="true" />
+                <span>Clear Filters</span>
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -822,7 +1220,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             </h2>
             <p className="text-sm text-muted-foreground">
               {hasActiveFilters
-                ? 'Try widening your search or clearing active category/location filters.'
+                ? 'Try widening your search or clearing active category/type/location filters.'
                 : 'Add your first band instrument, cable, or sound rig item to get started.'}
             </p>
           </div>
@@ -845,6 +1243,12 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           role={role}
           categories={categories}
           locations={locations}
+          equipmentTypes={equipmentTypes}
+          commentCounts={visibleCommentCounts}
+          selectionMode={canAdmin && selectionMode}
+          selectedIds={selectedIds}
+          onToggleSelect={handleToggleSelect}
+          onToggleSelectAll={handleToggleSelectAllTable}
           onSelectItem={handleOpenItem}
           onQuickCheck={handleQuickCheck}
           onEdit={handleOpenEdit}
@@ -857,12 +1261,49 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           role={role}
           categories={categories}
           locations={locations}
+          equipmentTypes={equipmentTypes}
+          commentCounts={visibleCommentCounts}
+          groupBy={groupBy}
+          selectionMode={canAdmin && selectionMode}
+          selectedIds={selectedIds}
+          onToggleSelect={handleToggleSelect}
           onSelectItem={handleOpenItem}
           onQuickCheck={handleQuickCheck}
           onEdit={handleOpenEdit}
           onDelete={setPendingDeleteItem}
           isChecking={isChecking}
         />
+      )}
+
+      {/* Sticky Admin Multi-Select Action Bar */}
+      {canAdmin && selectionMode && selectedIds.size > 0 && (
+        <div
+          role="region"
+          aria-label="Bulk selection actions"
+          className="sticky bottom-4 z-20 mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/40 bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md"
+        >
+          <span className="font-mono text-sm font-semibold text-foreground">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleClearSelection}
+            >
+              Clear
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setBulkAssignOpen(true)}
+            >
+              <Layers className="size-3.5" aria-hidden="true" />
+              <span>Bulk Assign</span>
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Slide-over Detail Drawer + ZoomLightbox */}
@@ -873,6 +1314,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         role={role}
         categories={categories}
         locations={locations}
+        equipmentTypes={equipmentTypes}
         onQuickCheck={handleQuickCheck}
         isChecking={isChecking}
         onEdit={handleOpenEdit}
@@ -880,6 +1322,9 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         onCheckout={canCheck ? handleOpenCheckout : undefined}
         onReturnLoan={canCheck ? handleReturnLoan : undefined}
         returningLoanId={returningLoanId}
+        onAddPhoto={canCheck ? handleAddDrawerPhoto : undefined}
+        isUploadingPhoto={isAddingPhoto}
+        isOffline={isOffline}
       />
 
       {/* Member & Admin Equipment Check-Out Dialog */}
@@ -899,7 +1344,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         />
       )}
 
-      {/* Admin Add/Edit Modal & Import Wizard */}
+      {/* Admin Add/Edit Modal, Bulk Assign & Import Wizard */}
       {canAdmin && (
         <>
           <ItemFormDialog
@@ -913,6 +1358,18 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             item={editingItem}
             categories={categories}
             locations={locations}
+            equipmentTypes={equipmentTypes}
+          />
+
+          <BulkAssignDialog
+            open={bulkAssignOpen}
+            onOpenChange={setBulkAssignOpen}
+            selectedIds={selectedIdsArray}
+            categories={categories}
+            locations={locations}
+            equipmentTypes={equipmentTypes}
+            onSuccess={handleClearSelection}
+            isOffline={isOffline}
           />
 
           <ImportWizardDialog
@@ -921,6 +1378,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             items={items}
             categories={categories}
             locations={locations}
+            equipmentTypes={equipmentTypes}
           />
         </>
       )}

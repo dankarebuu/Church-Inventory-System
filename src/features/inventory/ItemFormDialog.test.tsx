@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Category, LocationRecord } from '@/types/database';
+import type { Category, EquipmentType, LocationRecord } from '@/types/database';
 import { ItemFormDialog } from './ItemFormDialog';
 import type { EnrichedInventoryItem, SaveItemInput } from './useInventory';
 
@@ -92,6 +92,25 @@ const mockLocations: LocationRecord[] = [
     description: 'FOH rack & cabinet',
     sort_order: 20,
     created_at: '2026-11-18T00:00:00.000Z',
+  },
+];
+
+const mockEquipmentTypes: EquipmentType[] = [
+  {
+    id: 'et-mics',
+    name: 'Microphones',
+    color: '#d3554a',
+    icon: 'mic',
+    sort_order: 90,
+    created_at: '2026-11-20T00:00:00.000Z',
+  },
+  {
+    id: 'et-cables',
+    name: 'Cables & Cords',
+    color: '#4e7fb0',
+    icon: 'cable',
+    sort_order: 60,
+    created_at: '2026-11-20T00:00:00.000Z',
   },
 ];
 
@@ -345,5 +364,49 @@ describe('ItemFormDialog', () => {
     );
     expect(screen.getAllByRole('button', { name: /remove photo/i })).toHaveLength(1);
     expect(revokeObjectUrlSpy).not.toHaveBeenCalled();
+  });
+
+  it('syncs Equipment Type ID & text, allows None / Unassigned, and handles min_qty blank -> null and "0" -> 0', async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      equipmentTypes: mockEquipmentTypes,
+      item: makeItem({
+        equipment_type_id: 'et-mics',
+        equipment_type: 'Microphones',
+        min_qty: 3,
+      }),
+    });
+
+    // Clear min_qty to blank -> submits null, and change Equipment Type -> updates both ID & text
+    const minQtyInput = screen.getByLabelText(/min stock/i) as HTMLInputElement;
+    expect(minQtyInput.value).toBe('3');
+    await user.clear(minQtyInput);
+
+    await user.click(screen.getByRole('combobox', { name: /equipment type/i }));
+    await user.click(await screen.findByRole('option', { name: 'Cables & Cords' }));
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockSaveItem).toHaveBeenCalledTimes(1);
+    });
+    expect(mockSaveItem.mock.calls[0][0].values.equipment_type_id).toBe('et-cables');
+    expect(mockSaveItem.mock.calls[0][0].values.equipment_type).toBe('Cables & Cords');
+    expect(mockSaveItem.mock.calls[0][0].values.min_qty).toBeNull();
+
+    // Now test setting min_qty = '0' and clearing Equipment Type to "None / Unassigned"
+    mockSaveItem.mockClear();
+    await user.type(minQtyInput, '0');
+    await user.click(screen.getByRole('combobox', { name: /equipment type/i }));
+    await user.click(await screen.findByRole('option', { name: /none \/ unassigned/i }));
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockSaveItem).toHaveBeenCalledTimes(1);
+    });
+    expect(mockSaveItem.mock.calls[0][0].values.equipment_type_id).toBeNull();
+    expect(mockSaveItem.mock.calls[0][0].values.equipment_type).toBe('');
+    expect(mockSaveItem.mock.calls[0][0].values.min_qty).toBe(0);
   });
 });

@@ -5,7 +5,13 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextValue } from '@/features/auth/useAuth';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import type { Category, HistoryEntry, LoanRecord, UserRole } from '@/types/database';
+import type {
+  Category,
+  EquipmentType,
+  HistoryEntry,
+  LoanRecord,
+  UserRole,
+} from '@/types/database';
 import { DashboardPage } from './DashboardPage';
 
 const mockUseAuth = vi.fn<() => AuthContextValue>();
@@ -18,6 +24,13 @@ const mockUseInventoryItems = vi.fn<(role: UserRole) => {
 }>();
 const mockUseCategories = vi.fn<() => {
   data: Category[];
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => void;
+}>();
+const mockUseEquipmentTypes = vi.fn<() => {
+  data: EquipmentType[];
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
@@ -61,6 +74,16 @@ vi.mock('@/features/categories/useCategories', async () => {
   return {
     ...actual,
     useCategories: () => mockUseCategories(),
+  };
+});
+
+vi.mock('@/features/equipmentTypes/useEquipmentTypes', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/features/equipmentTypes/useEquipmentTypes')
+  >('@/features/equipmentTypes/useEquipmentTypes');
+  return {
+    ...actual,
+    useEquipmentTypes: () => mockUseEquipmentTypes(),
   };
 });
 
@@ -140,6 +163,33 @@ const sampleCategories: Category[] = [
   },
 ];
 
+const sampleEquipmentTypes: EquipmentType[] = [
+  {
+    id: 'et-inst',
+    name: 'Instruments',
+    color: '#2563EB',
+    icon: 'guitar',
+    sort_order: 10,
+    created_at: '2026-11-20T00:00:00.000Z',
+  },
+  {
+    id: 'et-di',
+    name: 'DI Boxes & Effects',
+    color: '#e8a33d',
+    icon: 'sliders',
+    sort_order: 20,
+    created_at: '2026-11-20T00:00:00.000Z',
+  },
+  {
+    id: 'et-cables',
+    name: 'Cables & Cords',
+    color: '#4e7fb0',
+    icon: 'cable',
+    sort_order: 30,
+    created_at: '2026-11-20T00:00:00.000Z',
+  },
+];
+
 function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
   const isStaff = role !== 'guest';
   return [
@@ -164,9 +214,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       ...(isStaff ? { checkedBy: 'Dan Caleb' } : {}),
       qty_on_loan: 1,
       available_qty: 1,
-      equipment_type_id: null,
-      equipment_type: null,
-      min_qty: null,
+      equipment_type_id: 'et-inst',
+      equipment_type: 'Instruments',
+      min_qty: 1,
       ...(isStaff ? { activeLoans: [] } : {}),
     },
     {
@@ -190,9 +240,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       ...(isStaff ? { checkedBy: 'Eli Cruz' } : {}),
       qty_on_loan: 2,
       available_qty: 2,
-      equipment_type_id: null,
-      equipment_type: null,
-      min_qty: null,
+      equipment_type_id: 'et-di',
+      equipment_type: 'DI Boxes & Effects',
+      min_qty: 4,
       ...(isStaff ? { activeLoans: [] } : {}),
     },
     {
@@ -216,9 +266,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       ...(isStaff ? { checkedBy: 'Dan Caleb' } : {}),
       qty_on_loan: 0,
       available_qty: 0,
-      equipment_type_id: null,
-      equipment_type: null,
-      min_qty: null,
+      equipment_type_id: 'et-cables',
+      equipment_type: 'Cables & Cords',
+      min_qty: 2,
       ...(isStaff ? { activeLoans: [] } : {}),
     },
     {
@@ -242,8 +292,8 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       ...(isStaff ? { checkedBy: 'Dan Caleb' } : {}),
       qty_on_loan: 0,
       available_qty: 1,
-      equipment_type_id: null,
-      equipment_type: null,
+      equipment_type_id: 'et-inst',
+      equipment_type: 'Instruments',
       min_qty: null,
       ...(isStaff ? { activeLoans: [] } : {}),
     },
@@ -356,6 +406,7 @@ interface RenderOptions {
   role?: UserRole;
   items?: EnrichedInventoryItem[];
   categories?: Category[];
+  equipmentTypes?: EquipmentType[];
   loans?: LoanRecord[];
   history?: HistoryEntry[];
   inventoryError?: Error | null;
@@ -370,6 +421,7 @@ function renderDashboard({
   role = 'guest',
   items,
   categories = sampleCategories,
+  equipmentTypes = sampleEquipmentTypes,
   loans = makeSampleLoans(),
   history = sampleHistory,
   inventoryError = null,
@@ -391,6 +443,13 @@ function renderDashboard({
   });
   mockUseCategories.mockReturnValue({
     data: categories,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  });
+  mockUseEquipmentTypes.mockReturnValue({
+    data: equipmentTypes,
     isLoading: false,
     isError: false,
     error: null,
@@ -445,7 +504,8 @@ describe('DashboardPage', () => {
     vi.clearAllMocks();
   });
 
-  it('renders KPI summary (with qty = 0 and anonymous On Loan units), Needs Attention, and Category Health for Guests without querying or rendering borrower names or Recent Activity', () => {
+  it('renders KPI summary (with qty = 0 and anonymous On Loan units), Low Stock callout, Needs Attention, and Equipment Type / Rig Health breakdown for Guests without querying or rendering borrower names or Recent Activity', async () => {
+    const user = userEvent.setup();
     renderDashboard({ role: 'guest' });
 
     expect(mockUseInventoryItems).toHaveBeenCalledWith('guest');
@@ -461,18 +521,36 @@ describe('DashboardPage', () => {
     expect(within(screen.getByTestId('kpi-flagged')).getByText('2')).toBeInTheDocument();
     expect(within(screen.getByTestId('kpi-on-loan')).getByText('3')).toBeInTheDocument();
 
+    // Low Stock callout shows 2 low-stock items (Radial J48 qty 4 <= min 4, XLR Spare Loom qty 0 <= min 2)
+    const lowStockCallout = screen.getByTestId('dashboard-low-stock');
+    expect(lowStockCallout).toHaveAttribute('href', '/inventory?stock=low');
+    expect(within(lowStockCallout).getByText('2')).toBeInTheDocument();
+    expect(within(lowStockCallout).getByText(/^low stock$/i)).toBeInTheDocument();
+    expect(within(lowStockCallout).getByText(/restock alert/i)).toBeInTheDocument();
+
     // Needs Attention shows repair and missing items only
     const attentionPanel = screen.getByTestId('dashboard-needs-attention');
     expect(within(attentionPanel).getByText('Radial J48 DI Box')).toBeInTheDocument();
     expect(within(attentionPanel).getByText('XLR Spare Loom')).toBeInTheDocument();
     expect(within(attentionPanel).queryByText('Pearl Brass Snare')).not.toBeInTheDocument();
 
-    // Category Health Breakdown shows top-level categories with item/unit stats
-    const categoryPanel = screen.getByTestId('dashboard-category-health');
-    expect(within(categoryPanel).getByText('Drums')).toBeInTheDocument();
-    expect(within(categoryPanel).getByText('Spares & Shared')).toBeInTheDocument();
-    expect(within(categoryPanel).getByText('Keyboard')).toBeInTheDocument();
-    expect(within(categoryPanel).getByText(/2 items · 4 units/i)).toBeInTheDocument();
+    // Inventory Health Breakdown defaults to Equipment Type ('type')
+    const healthPanel = screen.getByTestId('dashboard-category-health');
+    expect(within(healthPanel).getByRole('button', { name: /equipment type/i })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(within(healthPanel).getByText('Instruments')).toBeInTheDocument();
+    expect(within(healthPanel).getByText('DI Boxes & Effects')).toBeInTheDocument();
+    expect(within(healthPanel).getByText('Cables & Cords')).toBeInTheDocument();
+    expect(within(healthPanel).getByText(/2 items · 3 units/i)).toBeInTheDocument();
+
+    // Toggling to Rig switches breakdown to Rig Categories
+    await user.click(within(healthPanel).getByRole('button', { name: /^rig$/i }));
+    expect(within(healthPanel).getByText('Drums')).toBeInTheDocument();
+    expect(within(healthPanel).getByText('Spares & Shared')).toBeInTheDocument();
+    expect(within(healthPanel).getByText('Keyboard')).toBeInTheDocument();
+    expect(within(healthPanel).getByText(/2 items · 4 units/i)).toBeInTheDocument();
 
     // Strict Guest privacy isolation: zero borrower names, zero loans panel, zero Recent Activity or emails
     expect(screen.queryByRole('heading', { name: /active & overdue loans/i })).not.toBeInTheDocument();
@@ -485,7 +563,7 @@ describe('DashboardPage', () => {
     expect(screen.queryByText(/Eli Cruz/i)).not.toBeInTheDocument();
   });
 
-  it('routes Guest clicks on KPIs, Needs Attention items, and Category cards to filtered /inventory destinations', async () => {
+  it('routes Guest clicks on KPIs, Low Stock callout, Needs Attention items, Equipment Type cards, and Rig Category cards to filtered /inventory destinations', async () => {
     const user = userEvent.setup();
 
     let rendered = renderDashboard({ role: 'guest' });
@@ -514,14 +592,26 @@ describe('DashboardPage', () => {
     rendered.unmount();
 
     rendered = renderDashboard({ role: 'guest' });
+    await user.click(screen.getByTestId('dashboard-low-stock'));
+    expect(screen.getByTestId('route-echo')).toHaveTextContent('/inventory?stock=low');
+    rendered.unmount();
+
+    rendered = renderDashboard({ role: 'guest' });
     const attention = screen.getByTestId('dashboard-needs-attention');
     await user.click(within(attention).getByRole('link', { name: /radial j48 di box/i }));
     expect(screen.getByTestId('route-echo')).toHaveTextContent('/inventory?item=item-di');
     rendered.unmount();
 
     rendered = renderDashboard({ role: 'guest' });
-    const catPanel = screen.getByTestId('dashboard-category-health');
-    await user.click(within(catPanel).getByRole('link', { name: /spares & shared/i }));
+    const typePanel = screen.getByTestId('dashboard-category-health');
+    await user.click(within(typePanel).getByRole('link', { name: /instruments/i }));
+    expect(screen.getByTestId('route-echo')).toHaveTextContent('/inventory?type=et-inst');
+    rendered.unmount();
+
+    rendered = renderDashboard({ role: 'guest' });
+    const rigPanel = screen.getByTestId('dashboard-category-health');
+    await user.click(within(rigPanel).getByRole('button', { name: /^rig$/i }));
+    await user.click(within(rigPanel).getByRole('link', { name: /spares & shared/i }));
     expect(screen.getByTestId('route-echo')).toHaveTextContent('/inventory?category=cat-spares');
     rendered.unmount();
   });
@@ -555,12 +645,13 @@ describe('DashboardPage', () => {
     }
   });
 
-  it('shows healthy empty states when zero items are flagged, loaned, or logged in activity', () => {
+  it('shows healthy empty states when zero items are flagged, low-stock, loaned, or logged in activity', () => {
     const workingOnly = makeSampleItems('member').map((item) => ({
       ...item,
       condition: 'working' as const,
       qty_on_loan: 0,
       available_qty: item.qty,
+      min_qty: null,
     }));
 
     renderDashboard({
@@ -569,6 +660,10 @@ describe('DashboardPage', () => {
       loans: [],
       history: [],
     });
+
+    const lowStockCallout = screen.getByTestId('dashboard-low-stock');
+    expect(within(lowStockCallout).getByText('0 low-stock items')).toBeInTheDocument();
+    expect(lowStockCallout).toHaveAttribute('href', '/inventory?stock=low');
 
     expect(
       within(screen.getByTestId('dashboard-needs-attention')).getByText(
@@ -626,6 +721,13 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseCategories.mockReturnValue({
+      data: [],
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseEquipmentTypes.mockReturnValue({
       data: [],
       isLoading: true,
       isError: false,
