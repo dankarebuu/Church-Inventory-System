@@ -13,7 +13,8 @@ This runbook upgrades the live Supabase project (`gcplffcftuhjthtcnjjc`) for the
 3. **Local Testing** — Run the Vite React app against `.env.local` and verify Guest, Member, and Admin workflows.
 4. **Netlify Environment Variables & Auth Redirects** — Configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and Supabase password-recovery URLs.
 5. **Phase 2 (`002_phase2_rls_cutover.sql`)** — Replace `<YOUR_ADMIN_EMAIL>` in the SQL Editor and apply strict 3-tier RLS lockdown.
-6. **Build & Deploy `dist/` Zip to Netlify** — Run `npm run build`, zip the contents of `dist/`, and upload to Netlify.
+6. **Phase 3 (`003_predeploy_enhancements.sql`)** — Run the additive pre-deploy enhancements (Equipment Types, `min_qty`, `item_comments`, member photo append) on top of `001` + `002`.
+7. **Build & Deploy `dist/` Zip to Netlify** — Run `npm run build`, zip the contents of `dist/`, and upload to Netlify.
 
 ---
 
@@ -94,6 +95,28 @@ Run Phase 2 **immediately before** uploading the new Netlify build (once ready t
 2. Refresh deep SPA routes directly (`/inventory`, `/loans`, `/checklist`, `/reset-password`) to confirm `dist/_redirects` serves `index.html` with `200`.
 3. Log in as a **Member** and confirm `Sunday Checklist` check-offs succeed while direct item deletion or role edits are blocked.
 4. Log in as **Admin** and confirm Team Roles blocks demoting the last remaining `'admin'`.
+
+---
+
+## Phase 3 (`003_predeploy_enhancements.sql`)
+
+Run [003_predeploy_enhancements.sql](migrations/003_predeploy_enhancements.sql) on top of `001_phase1_extend_schema.sql` and `002_phase2_rls_cutover.sql` before deploying the enhanced React workspace.
+
+1. Open the **Supabase Dashboard** -> **SQL Editor**, paste [003_predeploy_enhancements.sql](migrations/003_predeploy_enhancements.sql), and run it. The script is additive and idempotent (safe to re-run).
+2. **Verify auto-tagged Equipment Types:**
+   - Run a quick SQL check to review the keyword backfill breakdown and any unmapped rows (`NULL`) that need manual tagging in the UI:
+     ```sql
+     SELECT coalesce(equipment_type, '(Untagged)') AS equipment_type, count(*)
+     FROM public.inventory
+     WHERE deleted_at IS NULL
+     GROUP BY 1
+     ORDER BY 2 DESC;
+     ```
+   - Confirm `public.inventory_public` includes the appended `equipment_type_id`, `equipment_type`, and `min_qty` columns without exposing PII.
+3. **Verify Equipment Types & `item_comments` RLS (Incognito / REST checks):**
+   - `anon` gets HTTP `200` on `GET /rest/v1/equipment_types` and `GET /rest/v1/inventory_public`.
+   - `anon` gets HTTP `401` / Postgres `42501` (`permission denied`) on `GET /rest/v1/item_comments`.
+   - Authenticated **Member** can read/post/edit/delete their own comments (cannot set or toggle `pinned`, which raises `42501`) and append photos (up to 4) via `member_add_item_photo`, while `storage.objects` `UPDATE`/`DELETE` remain `admin`-only.
 
 ---
 
