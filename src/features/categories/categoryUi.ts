@@ -18,7 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import type { Category, LocationRecord } from '@/types/database';
+import type { Category, EquipmentType, LocationRecord } from '@/types/database';
 
 export interface CategoryIconOption {
   value: string;
@@ -170,6 +170,39 @@ export function computeLocationItemCounts(
   }
 
   return byLocationId;
+}
+
+/**
+ * Counts active inventory items per equipment type using `equipment_type_id`
+ * first and falling back to case-insensitive `equipment_type` name.
+ */
+export function computeEquipmentTypeItemCounts(
+  items: readonly EnrichedInventoryItem[],
+  equipmentTypes: readonly EquipmentType[]
+): Map<string, number> {
+  const byTypeId = new Map<string, number>();
+  const typeById = new Map(equipmentTypes.map((et) => [et.id, et]));
+  const typeByLowerName = new Map(
+    equipmentTypes.map((et) => [et.name.trim().toLowerCase(), et])
+  );
+
+  for (const item of items) {
+    let resolvedTypeId: string | null = null;
+    if (item.equipment_type_id && typeById.has(item.equipment_type_id)) {
+      resolvedTypeId = item.equipment_type_id;
+    } else if (!item.equipment_type_id && item.equipment_type) {
+      const matched = typeByLowerName.get(item.equipment_type.trim().toLowerCase());
+      if (matched) {
+        resolvedTypeId = matched.id;
+      }
+    }
+
+    if (resolvedTypeId) {
+      byTypeId.set(resolvedTypeId, (byTypeId.get(resolvedTypeId) ?? 0) + 1);
+    }
+  }
+
+  return byTypeId;
 }
 
 /**

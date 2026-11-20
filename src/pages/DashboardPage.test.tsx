@@ -164,6 +164,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       ...(isStaff ? { checkedBy: 'Dan Caleb' } : {}),
       qty_on_loan: 1,
       available_qty: 1,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
       ...(isStaff ? { activeLoans: [] } : {}),
     },
     {
@@ -187,6 +190,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       ...(isStaff ? { checkedBy: 'Eli Cruz' } : {}),
       qty_on_loan: 2,
       available_qty: 2,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
       ...(isStaff ? { activeLoans: [] } : {}),
     },
     {
@@ -210,6 +216,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       ...(isStaff ? { checkedBy: 'Dan Caleb' } : {}),
       qty_on_loan: 0,
       available_qty: 0,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
       ...(isStaff ? { activeLoans: [] } : {}),
     },
     {
@@ -233,6 +242,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       ...(isStaff ? { checkedBy: 'Dan Caleb' } : {}),
       qty_on_loan: 0,
       available_qty: 1,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
       ...(isStaff ? { activeLoans: [] } : {}),
     },
   ];
@@ -678,6 +690,9 @@ describe('DashboardPage', () => {
         checkedBy: 'Dan Caleb',
         qty_on_loan: 0,
         available_qty: 1,
+        equipment_type_id: null,
+        equipment_type: null,
+        min_qty: null,
         activeLoans: [],
       },
     ];

@@ -48,6 +48,63 @@ const nonNegativeIntQtySchema = z
   );
 
 /**
+ * Validates optional non-negative integer thresholds (`min_qty`), converting
+ * blank strings, `null`, and `undefined` to `null` while keeping `0` / `'0'` as `0`.
+ */
+const nullableNonNegativeIntSchema = z
+  .union([z.number(), z.string(), z.null(), z.undefined()])
+  .optional()
+  .transform((val, ctx) => {
+    if (val === null || val === undefined) {
+      return null;
+    }
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed === '') {
+        return null;
+      }
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Minimum stock must be a whole number',
+        });
+        return z.NEVER;
+      }
+      if (parsed < 0) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Minimum stock cannot be negative',
+        });
+        return z.NEVER;
+      }
+      return parsed === 0 ? 0 : parsed;
+    }
+    if (typeof val === 'number') {
+      if (!Number.isFinite(val) || !Number.isInteger(val)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Minimum stock must be a whole number',
+        });
+        return z.NEVER;
+      }
+      if (val < 0) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Minimum stock cannot be negative',
+        });
+        return z.NEVER;
+      }
+      return val === 0 ? 0 : val;
+    }
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Minimum stock must be a whole number',
+    });
+    return z.NEVER;
+  });
+
+/**
  * Zod schema for Admin item creation and editing.
  * Legacy `borrower` and `returnDate` fields are intentionally excluded so
  * `public.loans` remains the single source of truth for check-outs.
@@ -58,8 +115,11 @@ export const itemFormSchema = z
     category: optionalTrimmedString,
     category_id: nullableOptionalId,
     subcategory_id: nullableOptionalId,
+    equipment_type_id: nullableOptionalId,
+    equipment_type: optionalTrimmedString,
     brand: optionalTrimmedString,
     qty: nonNegativeIntQtySchema,
+    min_qty: nullableNonNegativeIntSchema,
     condition: itemConditionSchema.default('working'),
     owner: optionalTrimmedString,
     location: optionalTrimmedString,

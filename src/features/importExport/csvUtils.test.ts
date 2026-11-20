@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import type { Category, HistoryEntry, LoanRecord } from '@/types/database';
+import type { Category, EquipmentType, HistoryEntry, LoanRecord } from '@/types/database';
 import {
   exportItemsToCSV,
   exportItemsToJSON,
@@ -260,6 +260,9 @@ describe('parseJsonImportPayload', () => {
       checkedBy: 'Dan Caleb',
       qty_on_loan: 2,
       available_qty: 0,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
       activeLoans: [
         {
           id: 'loan-1',
@@ -333,6 +336,9 @@ describe('exportItemsToCSV & exportItemsToJSON', () => {
       checkedBy: 'Dan Caleb',
       qty_on_loan: 1,
       available_qty: 0,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
     },
   ];
 
@@ -426,5 +432,122 @@ describe('exportItemsToCSV & exportItemsToJSON', () => {
     const parsedRows = mapCsvRowsByHeader(parseCSV(csv));
     expect(parsedRows[0].dateChecked).toBe('November 15, 2026');
     expect(parsedRows[1].dateChecked).toBe('Legacy Spring 2024');
+  });
+
+  it('supports Equipment Type & Min Qty aliases, validation, and CSV/JSON round-trip', () => {
+    const aliasSets = [
+      ['Equipment', 'Equipment Type', 'Min Qty'],
+      ['Equipment', 'equipment_type', 'min_qty'],
+      ['Equipment', 'Type', 'Min Stock'],
+      ['Equipment', 'Gear Type', 'Reorder Level'],
+      ['Equipment', 'Equipment Type', 'Min Quantity'],
+    ];
+
+    for (const headers of aliasSets) {
+      const parsed = mapCsvRowsByHeader([
+        headers,
+        ['Shure SM58', 'Microphones', '0'],
+        ['XLR Cable', 'Cables & Cords', '3'],
+        ['Spare Drum Key', '', ''],
+      ]);
+
+      expect(parsed[0]).toEqual(
+        expect.objectContaining({
+          equipment_type: 'Microphones',
+          min_qty: 0,
+        })
+      );
+      expect(parsed[0].providedFields).toEqual(
+        expect.arrayContaining(['equipment_type', 'min_qty'])
+      );
+      expect(parsed[1]).toEqual(
+        expect.objectContaining({
+          equipment_type: 'Cables & Cords',
+          min_qty: 3,
+        })
+      );
+      expect(parsed[2]).toEqual(
+        expect.objectContaining({
+          equipment_type: null,
+          min_qty: null,
+        })
+      );
+    }
+
+    // Rejects invalid Min Qty values
+    expect(() =>
+      mapCsvRowsByHeader(parseCSV('"Equipment","Min Qty"\n"Mic","-1"'))
+    ).toThrow(/min qty/i);
+    expect(() =>
+      mapCsvRowsByHeader(parseCSV('"Equipment","Min Qty"\n"Mic","1.5"'))
+    ).toThrow(/min qty/i);
+    expect(() =>
+      mapCsvRowsByHeader(parseCSV('"Equipment","Min Qty"\n"Mic","abc"'))
+    ).toThrow(/min qty/i);
+
+    const equipmentTypes: EquipmentType[] = [
+      {
+        id: 'et-mics',
+        name: 'Microphones',
+        color: '#d3554a',
+        icon: 'mic',
+        sort_order: 90,
+        created_at: '2026-11-20T00:00:00.000Z',
+      },
+    ];
+
+    const roundTripItems: EnrichedInventoryItem[] = [
+      {
+        ...sampleItems[0],
+        id: 'item-et-1',
+        item: 'Shure SM58',
+        qty: 2,
+        equipment_type_id: 'et-mics',
+        equipment_type: 'Old Name',
+        min_qty: 0,
+      },
+      {
+        ...sampleItems[0],
+        id: 'item-et-2',
+        item: 'Spare Stand',
+        qty: 4,
+        equipment_type_id: null,
+        equipment_type: 'Stands & Hardware',
+        min_qty: null,
+      },
+    ];
+
+    const csv = exportItemsToCSV(roundTripItems, [], [], {
+      download: false,
+      equipmentTypes,
+    });
+    const reparsedCsv = mapCsvRowsByHeader(parseCSV(csv));
+    expect(reparsedCsv[0].equipment_type).toBe('Microphones');
+    expect(reparsedCsv[0].min_qty).toBe(0);
+    expect(reparsedCsv[1].equipment_type).toBe('Stands & Hardware');
+    expect(reparsedCsv[1].min_qty).toBeNull();
+
+    const jsonText = exportItemsToJSON(roundTripItems, [], { download: false });
+    const reparsedJson = parseJsonImportPayload(jsonText, [], equipmentTypes);
+    expect(reparsedJson[0]).toEqual(
+      expect.objectContaining({
+        equipment_type_id: 'et-mics',
+        equipment_type: 'Microphones',
+        min_qty: 0,
+      })
+    );
+    expect(reparsedJson[1]).toEqual(
+      expect.objectContaining({
+        equipment_type: 'Stands & Hardware',
+        min_qty: null,
+      })
+    );
+    expect(() =>
+      parseJsonImportPayload(
+        JSON.stringify({ items: [{ item: 'Mic', min_qty: -2 }] }),
+        [],
+        equipmentTypes
+      )
+    ).toThrow(/min qty/i);
   });
 });

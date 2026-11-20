@@ -9,6 +9,7 @@ import {
   MapPin,
   Plus,
   RefreshCw,
+  Tags,
   Trash2,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -31,6 +32,7 @@ import { useAuth } from '@/features/auth/useAuth';
 import { CategoryDialog } from '@/features/categories/CategoryDialog';
 import {
   computeCategoryItemCounts,
+  computeEquipmentTypeItemCounts,
   computeLocationItemCounts,
   formatItemCountLabel,
   formatSubcategoryCountLabel,
@@ -43,6 +45,13 @@ import {
   useCategoryMutations,
   type CategoryTreeNode,
 } from '@/features/categories/useCategories';
+import { EquipmentTypeDialog } from '@/features/equipmentTypes/EquipmentTypeDialog';
+import {
+  getEquipmentTypeColor,
+  sortEquipmentTypes,
+  useEquipmentTypeMutations,
+  useEquipmentTypes,
+} from '@/features/equipmentTypes/useEquipmentTypes';
 import { useInventoryItems, type EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { LocationDialog } from '@/features/locations/LocationDialog';
 import {
@@ -50,9 +59,9 @@ import {
   useLocationMutations,
   useLocations,
 } from '@/features/locations/useLocations';
-import type { Category, LocationRecord } from '@/types/database';
+import type { Category, EquipmentType, LocationRecord } from '@/types/database';
 
-type CategoriesTab = 'categories' | 'locations';
+type CategoriesTab = 'categories' | 'locations' | 'types';
 
 interface PendingCategoryDelete {
   category: Category;
@@ -65,8 +74,14 @@ interface PendingLocationDelete {
   linkedItemCount: number;
 }
 
+interface PendingEquipmentTypeDelete {
+  equipmentType: EquipmentType;
+  linkedItemCount: number;
+}
+
 const EMPTY_CATEGORIES: Category[] = [];
 const EMPTY_LOCATIONS: LocationRecord[] = [];
+const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
 const EMPTY_ITEMS: EnrichedInventoryItem[] = [];
 
 function formatInventoryLinkCount(count: number): string {
@@ -81,15 +96,16 @@ export function CategoriesPage() {
   const { role } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const rawTab = searchParams.get('tab');
   const activeTab: CategoriesTab =
-    searchParams.get('tab') === 'locations' ? 'locations' : 'categories';
+    rawTab === 'locations' ? 'locations' : rawTab === 'types' ? 'types' : 'categories';
 
   const handleTabChange = (value: string) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        if (value === 'locations') {
-          next.set('tab', 'locations');
+        if (value === 'locations' || value === 'types') {
+          next.set('tab', value);
         } else {
           next.delete('tab');
         }
@@ -116,6 +132,14 @@ export function CategoriesPage() {
   } = useLocations();
 
   const {
+    data: equipmentTypes = EMPTY_EQUIPMENT_TYPES,
+    isLoading: isLoadingEquipmentTypes,
+    isError: isEquipmentTypesError,
+    error: equipmentTypesError,
+    refetch: refetchEquipmentTypes,
+  } = useEquipmentTypes();
+
+  const {
     data: items = EMPTY_ITEMS,
     isLoading: isLoadingItems,
     isError: isItemsError,
@@ -125,6 +149,8 @@ export function CategoriesPage() {
 
   const { deleteCategory, isDeleting: isDeletingCategory } = useCategoryMutations();
   const { deleteLocation, isDeleting: isDeletingLocation } = useLocationMutations();
+  const { deleteEquipmentType, isDeleting: isDeletingEquipmentType } =
+    useEquipmentTypeMutations();
 
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -133,15 +159,25 @@ export function CategoriesPage() {
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<LocationRecord | null>(null);
 
+  const [equipmentTypeDialogOpen, setEquipmentTypeDialogOpen] = useState(false);
+  const [editingEquipmentType, setEditingEquipmentType] =
+    useState<EquipmentType | null>(null);
+
   const [pendingDeleteCategory, setPendingDeleteCategory] =
     useState<PendingCategoryDelete | null>(null);
   const [pendingDeleteLocation, setPendingDeleteLocation] =
     useState<PendingLocationDelete | null>(null);
+  const [pendingDeleteEquipmentType, setPendingDeleteEquipmentType] =
+    useState<PendingEquipmentTypeDelete | null>(null);
 
   const canAdmin = role === 'admin';
 
   const categoryTree = useMemo(() => buildCategoryTree(categories), [categories]);
   const sortedLocations = useMemo(() => sortLocations(locations), [locations]);
+  const sortedEquipmentTypes = useMemo(
+    () => sortEquipmentTypes(equipmentTypes),
+    [equipmentTypes]
+  );
 
   const categoryCounts = useMemo(
     () => computeCategoryItemCounts(items, categories),
@@ -151,17 +187,29 @@ export function CategoriesPage() {
     () => computeLocationItemCounts(items, locations),
     [items, locations]
   );
+  const equipmentTypeCounts = useMemo(
+    () => computeEquipmentTypeItemCounts(items, equipmentTypes),
+    [items, equipmentTypes]
+  );
 
-  const isLoading = isLoadingCategories || isLoadingLocations || isLoadingItems;
-  const isError = isCategoriesError || isLocationsError || isItemsError;
+  const isLoading =
+    isLoadingCategories || isLoadingLocations || isLoadingEquipmentTypes || isLoadingItems;
+  const isError =
+    isCategoriesError || isLocationsError || isEquipmentTypesError || isItemsError;
   const errorMessage =
     categoriesError?.message ??
     locationsError?.message ??
+    equipmentTypesError?.message ??
     itemsError?.message ??
     'Unable to load categories and storage locations.';
 
   const handleRetry = () => {
-    void Promise.all([refetchCategories(), refetchLocations(), refetchItems()]);
+    void Promise.all([
+      refetchCategories(),
+      refetchLocations(),
+      refetchEquipmentTypes(),
+      refetchItems(),
+    ]);
   };
 
   const handleOpenAddCategory = () => {
@@ -249,6 +297,39 @@ export function CategoriesPage() {
     }
   };
 
+  const handleOpenAddEquipmentType = () => {
+    if (!canAdmin) return;
+    setEditingEquipmentType(null);
+    setEquipmentTypeDialogOpen(true);
+  };
+
+  const handleOpenEditEquipmentType = (equipmentType: EquipmentType) => {
+    if (!canAdmin) return;
+    setEditingEquipmentType(equipmentType);
+    setEquipmentTypeDialogOpen(true);
+  };
+
+  const handleRequestDeleteEquipmentType = (equipmentType: EquipmentType) => {
+    if (!canAdmin) return;
+    setPendingDeleteEquipmentType({
+      equipmentType,
+      linkedItemCount: equipmentTypeCounts.get(equipmentType.id) ?? 0,
+    });
+  };
+
+  const handleConfirmDeleteEquipmentType = async () => {
+    if (!pendingDeleteEquipmentType || !canAdmin) return;
+    const target = pendingDeleteEquipmentType.equipmentType;
+    try {
+      await deleteEquipmentType(target.id);
+      toast.success(`Deleted "${target.name}".`);
+      setPendingDeleteEquipmentType(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to delete equipment type.';
+      toast.error(msg);
+    }
+  };
+
   return (
     <section className="mx-auto max-w-7xl space-y-6">
       {/* Page Header */}
@@ -261,8 +342,8 @@ export function CategoriesPage() {
             Categories & Locations
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Browse 2-level equipment categories and storage rooms, or click through to filtered
-            inventory gear.
+            Browse 2-level rig categories, storage rooms, and equipment types, or click through
+            to filtered inventory gear.
           </p>
         </div>
 
@@ -273,10 +354,15 @@ export function CategoriesPage() {
                 <Plus className="size-4" aria-hidden="true" />
                 <span>Add Category</span>
               </Button>
-            ) : (
+            ) : activeTab === 'locations' ? (
               <Button type="button" onClick={handleOpenAddLocation}>
                 <Plus className="size-4" aria-hidden="true" />
                 <span>Add Location</span>
+              </Button>
+            ) : (
+              <Button type="button" onClick={handleOpenAddEquipmentType}>
+                <Plus className="size-4" aria-hidden="true" />
+                <span>Add Equipment Type</span>
               </Button>
             )}
           </div>
@@ -318,7 +404,7 @@ export function CategoriesPage() {
         >
           <TabsList>
             <TabsTrigger value="categories">
-              <span>Categories</span>
+              <span>Rig Categories</span>
               <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                 {categoryTree.length}
               </span>
@@ -327,6 +413,12 @@ export function CategoriesPage() {
               <span>Storage Locations</span>
               <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                 {sortedLocations.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger value="types">
+              <span>Equipment Types</span>
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                {sortedEquipmentTypes.length}
               </span>
             </TabsTrigger>
           </TabsList>
@@ -638,6 +730,130 @@ export function CategoriesPage() {
               </div>
             )}
           </TabsContent>
+
+          {/* Equipment Types Tab */}
+          <TabsContent value="types" className="space-y-4">
+            {sortedEquipmentTypes.length === 0 ? (
+              <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card p-8 text-center shadow-card">
+                <Tags className="size-10 text-muted-foreground/60" aria-hidden="true" />
+                <div className="space-y-1">
+                  <h2 className="font-display text-lg font-semibold text-foreground">
+                    No equipment types configured yet
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Create functional equipment types (such as Instruments, Microphones, or
+                    Cables) to classify gear across categories.
+                  </p>
+                </div>
+                {canAdmin && (
+                  <Button type="button" onClick={handleOpenAddEquipmentType}>
+                    <Plus className="size-4" aria-hidden="true" />
+                    <span>Add Equipment Type</span>
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {sortedEquipmentTypes.map((et) => {
+                  const swatchColor =
+                    et.color || getEquipmentTypeColor(et.name, equipmentTypes, et.id);
+                  const TypeIcon = resolveCategoryIcon(et.icon);
+                  const itemCount = equipmentTypeCounts.get(et.id) ?? 0;
+                  const headingId = `equipment-type-card-${et.id}`;
+
+                  return (
+                    <article
+                      key={et.id}
+                      aria-labelledby={headingId}
+                      className="relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card transition-shadow hover:shadow-hover"
+                    >
+                      <div
+                        aria-hidden="true"
+                        className="band absolute inset-y-0 left-0 w-1.5"
+                        style={{ backgroundColor: swatchColor }}
+                      />
+
+                      <CardHeader className="pl-5 pb-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span
+                              aria-hidden="true"
+                              className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/60 text-white shadow-xs"
+                              style={{ backgroundColor: swatchColor }}
+                            >
+                              <TypeIcon className="size-5" />
+                            </span>
+
+                            <div className="min-w-0">
+                              <h2
+                                id={headingId}
+                                className="font-display truncate text-base font-semibold leading-tight text-foreground"
+                              >
+                                {et.name}
+                              </h2>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span
+                                  aria-label={`Color swatch ${swatchColor}`}
+                                  title={swatchColor}
+                                  className="inline-block size-2.5 rounded-full border border-border"
+                                  style={{ backgroundColor: swatchColor }}
+                                />
+                                <Badge variant="secondary">
+                                  {formatItemCountLabel(itemCount)}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+
+                          <Link
+                            to={`/inventory?type=${encodeURIComponent(et.id)}`}
+                            aria-label={`View ${et.name} equipment`}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <span>Browse</span>
+                            <ArrowRight className="size-3.5" aria-hidden="true" />
+                          </Link>
+                        </div>
+                      </CardHeader>
+
+                      <CardContent className="flex-1 pl-5 pb-4">
+                        <p className="font-mono text-[11px] text-muted-foreground">
+                          {swatchColor.toUpperCase()} · Order {et.sort_order}
+                        </p>
+                      </CardContent>
+
+                      {canAdmin && (
+                        <CardFooter className="justify-end gap-1 border-t border-dashed border-border pl-5 pt-3">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="size-8 text-muted-foreground hover:text-foreground"
+                            aria-label={`Edit ${et.name}`}
+                            title={`Edit ${et.name}`}
+                            onClick={() => handleOpenEditEquipmentType(et)}
+                          >
+                            <Edit2 className="size-4" aria-hidden="true" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="size-8 text-muted-foreground hover:text-destructive"
+                            aria-label={`Delete ${et.name}`}
+                            title={`Delete ${et.name}`}
+                            onClick={() => handleRequestDeleteEquipmentType(et)}
+                          >
+                            <Trash2 className="size-4" aria-hidden="true" />
+                          </Button>
+                        </CardFooter>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
         </Tabs>
       )}
 
@@ -667,6 +883,17 @@ export function CategoriesPage() {
               }
             }}
             location={editingLocation}
+          />
+
+          <EquipmentTypeDialog
+            open={equipmentTypeDialogOpen}
+            onOpenChange={(nextOpen) => {
+              setEquipmentTypeDialogOpen(nextOpen);
+              if (!nextOpen) {
+                setEditingEquipmentType(null);
+              }
+            }}
+            equipmentType={editingEquipmentType}
           />
 
           {/* Delete Category / Subcategory Confirmation */}
@@ -776,6 +1003,54 @@ export function CategoriesPage() {
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   {isDeletingLocation ? 'Deleting...' : 'Delete Location'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Delete Equipment Type Confirmation */}
+          <AlertDialog
+            open={Boolean(pendingDeleteEquipmentType)}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen && !isDeletingEquipmentType) {
+                setPendingDeleteEquipmentType(null);
+              }
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Equipment Type?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {pendingDeleteEquipmentType && (
+                    <>
+                      <span className="font-semibold text-foreground">
+                        {pendingDeleteEquipmentType.equipmentType.name}
+                      </span>{' '}
+                      is currently linked to{' '}
+                      <span className="font-semibold text-foreground">
+                        {formatInventoryLinkCount(
+                          pendingDeleteEquipmentType.linkedItemCount
+                        )}
+                      </span>
+                      . Linked equipment will remain in inventory with its equipment type
+                      reference cleared.
+                    </>
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeletingEquipmentType}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={isDeletingEquipmentType}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void handleConfirmDeleteEquipmentType();
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isDeletingEquipmentType ? 'Deleting...' : 'Delete Equipment Type'}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

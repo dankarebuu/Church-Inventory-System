@@ -4,6 +4,7 @@ import { isLoanOverdue } from '@/features/loans/schemas';
 import { formatDisplayDate, trimOrNull } from '@/lib/utils';
 import type {
   Category,
+  EquipmentType,
   ItemCondition,
   LocationRecord,
   PublicInventoryItem,
@@ -97,6 +98,31 @@ export function resolveLocationName(
     if (matched) return matched.name;
   }
   return item.location?.trim() || '—';
+}
+
+/**
+ * Resolves the display name of an item's equipment type via `equipment_type_id`
+ * first, falling back to the denormalized `equipment_type` text column.
+ */
+export function resolveEquipmentTypeName(
+  item: Pick<PublicInventoryItem, 'equipment_type' | 'equipment_type_id'>,
+  equipmentTypes: readonly EquipmentType[] = []
+): string | null {
+  if (item.equipment_type_id) {
+    const matched = equipmentTypes.find((et) => et.id === item.equipment_type_id);
+    if (matched) return matched.name;
+  }
+  return trimOrNull(item.equipment_type);
+}
+
+/**
+ * Returns true when an item has a configured non-null `min_qty` threshold and
+ * its total `qty` is at or below that threshold (`qty <= min_qty`).
+ */
+export function isLowStock(
+  item: Pick<PublicInventoryItem, 'qty' | 'min_qty'> | { qty: number; min_qty?: number | null }
+): boolean {
+  return item.min_qty !== null && item.min_qty !== undefined && item.qty <= item.min_qty;
 }
 
 export function formatLastCheckedDate(

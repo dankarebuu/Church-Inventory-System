@@ -164,6 +164,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       checked_at: '2026-11-18T09:00:00.000Z',
       qty_on_loan: 1,
       available_qty: 1,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
     },
     {
       id: 'item-cable',
@@ -185,6 +188,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       checked_at: '2026-11-17T09:00:00.000Z',
       qty_on_loan: 0,
       available_qty: 4,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
     },
   ];
 

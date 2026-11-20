@@ -1,8 +1,12 @@
-import { resolveSubcategoryName } from '@/features/inventory/inventoryUi';
+import {
+  resolveEquipmentTypeName,
+  resolveSubcategoryName,
+} from '@/features/inventory/inventoryUi';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { formatDisplayDate, trimOrNull } from '@/lib/utils';
 import type {
   Category,
+  EquipmentType,
   HistoryEntry,
   ItemCondition,
   LoanRecord,
@@ -23,8 +27,10 @@ export type ImportFieldKey =
   | 'item'
   | 'category'
   | 'subcategory'
+  | 'equipment_type'
   | 'brand'
   | 'qty'
+  | 'min_qty'
   | 'condition'
   | 'owner'
   | 'location'
@@ -42,8 +48,11 @@ export interface ParsedImportItem {
   category: string;
   subcategory: string | null;
   subcategory_id?: string | null;
+  equipment_type: string | null;
+  equipment_type_id?: string | null;
   brand: string | null;
   qty: number;
+  min_qty: number | null;
   condition: ItemCondition;
   owner: string | null;
   location: string | null;
@@ -62,6 +71,7 @@ export interface ParsedImportItem {
 export interface ExportOptions {
   download?: boolean;
   filename?: string;
+  equipmentTypes?: readonly EquipmentType[];
 }
 
 interface HeaderFieldSpec {
@@ -71,6 +81,11 @@ interface HeaderFieldSpec {
 }
 
 const HEADER_FIELD_SPECS: readonly HeaderFieldSpec[] = [
+  {
+    field: 'equipment_type',
+    exactAliases: ['equipment type', 'type', 'gear type', 'item type'],
+    fallbackMatch: (h) => h.includes('equipment type') || h.includes('gear type'),
+  },
   {
     field: 'item',
     exactAliases: ['item', 'equipment', 'item name', 'equipment name', 'gear', 'name'],
@@ -90,6 +105,20 @@ const HEADER_FIELD_SPECS: readonly HeaderFieldSpec[] = [
   {
     field: 'brand',
     exactAliases: ['brand', 'make', 'manufacturer', 'model'],
+  },
+  {
+    field: 'min_qty',
+    exactAliases: [
+      'min qty',
+      'min stock',
+      'reorder level',
+      'min quantity',
+      'minimum qty',
+      'minimum quantity',
+      'minimum stock',
+    ],
+    fallbackMatch: (h) =>
+      h.includes('min qty') || h.includes('min stock') || h.includes('reorder'),
   },
   {
     field: 'qty',
@@ -278,6 +307,33 @@ function parseImportQty(raw: unknown, rowNumber: number): number {
   return parsed === 0 ? 0 : parsed;
 }
 
+function parseImportMinQty(raw: unknown, rowNumber: number): number | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw < 0) {
+      throw new Error(
+        `Row ${rowNumber}: Invalid min qty "${String(raw)}". Expected a non-negative whole number.`
+      );
+    }
+    return raw === 0 ? 0 : raw;
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed === '') return null;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+      throw new Error(
+        `Row ${rowNumber}: Invalid min qty "${trimmed}". Expected a non-negative whole number.`
+      );
+    }
+    return parsed === 0 ? 0 : parsed;
+  }
+
+  throw new Error(
+    `Row ${rowNumber}: Invalid min qty "${String(raw)}". Expected a non-negative whole number.`
+  );
+}
+
 function resolveHeaderColumnMap(
   rawHeaders: readonly string[]
 ): Partial<Record<ImportFieldKey, number>> {
@@ -350,13 +406,17 @@ export function mapCsvRowsByHeader(rows: readonly (readonly string[])[]): Parsed
 
     const rawQty =
       columnMap.qty !== undefined ? row[columnMap.qty] : undefined;
+    const rawMinQty =
+      columnMap.min_qty !== undefined ? row[columnMap.min_qty] : undefined;
 
     parsedItems.push({
       item: itemName,
       category: readCell(row, 'category') ?? 'Others',
       subcategory: readCell(row, 'subcategory'),
+      equipment_type: readCell(row, 'equipment_type'),
       brand: readCell(row, 'brand'),
       qty: parseImportQty(rawQty, i + 1),
+      min_qty: parseImportMinQty(rawMinQty, i + 1),
       condition: normalizeImportCondition(readCell(row, 'condition')),
       owner: readCell(row, 'owner'),
       location: readCell(row, 'location'),
@@ -433,8 +493,10 @@ function collectJsonProvidedFields(record: Record<string, unknown>): ImportField
   if (has('item') || has('equipment')) fields.push('item');
   if (has('category') || has('category_id')) fields.push('category');
   if (has('subcategory') || has('subcategory_id')) fields.push('subcategory');
+  if (has('equipment_type') || has('equipment_type_id')) fields.push('equipment_type');
   if (has('brand')) fields.push('brand');
   if (has('qty')) fields.push('qty');
+  if (has('min_qty')) fields.push('min_qty');
   if (has('condition') || has('status')) fields.push('condition');
   if (has('owner')) fields.push('owner');
   if (has('location') || has('location_id')) fields.push('location');
@@ -457,7 +519,8 @@ function collectJsonProvidedFields(record: Record<string, unknown>): ImportField
  */
 export function parseJsonImportPayload(
   jsonText: string,
-  categories: readonly Category[] = []
+  categories: readonly Category[] = [],
+  equipmentTypes: readonly EquipmentType[] = []
 ): ParsedImportItem[] {
   let parsed: unknown;
   try {
@@ -506,6 +569,14 @@ export function parseJsonImportPayload(
     const resolvedSubcategoryName =
       subcategoryFromText ?? subcategoryFromId ?? null;
 
+    const equipmentTypeId = asOptionalString(record.equipment_type_id);
+    const equipmentTypeFromText = asOptionalString(record.equipment_type);
+    const equipmentTypeFromId = equipmentTypeId
+      ? equipmentTypes.find((et) => et.id === equipmentTypeId)?.name
+      : undefined;
+    const resolvedEquipmentTypeName =
+      equipmentTypeFromId ?? equipmentTypeFromText ?? null;
+
     const activeLoans = extractActiveLoansFromJson(record);
     const flatBorrower =
       asOptionalString(record.borrower) ?? asOptionalString(record.borrower_name);
@@ -529,8 +600,11 @@ export function parseJsonImportPayload(
       category: resolvedCategoryName,
       subcategory: resolvedSubcategoryName,
       ...(subcategoryId ? { subcategory_id: subcategoryId } : {}),
+      equipment_type: resolvedEquipmentTypeName,
+      ...(equipmentTypeId ? { equipment_type_id: equipmentTypeId } : {}),
       brand: asOptionalString(record.brand),
       qty: parseImportQty(record.qty, i + 1),
+      min_qty: parseImportMinQty(record.min_qty, i + 1),
       condition: normalizeImportCondition(record.condition ?? record.status),
       owner: asOptionalString(record.owner),
       location: asOptionalString(record.location),
@@ -696,9 +770,11 @@ export function exportItemsToCSV(
   const headers = [
     'Category',
     'Subcategory',
+    'Equipment Type',
     'Item',
     'Brand',
     'Qty',
+    'Min Qty',
     'Condition',
     'Owner',
     'Location',
@@ -719,7 +795,15 @@ export function exportItemsToCSV(
       .filter((d): d is string => Boolean(d))
       .join('; ');
     const safeQty = Number.isFinite(item.qty) ? Math.max(item.qty, 0) : 0;
+    const minQtyCell =
+      item.min_qty !== null &&
+      item.min_qty !== undefined &&
+      Number.isFinite(item.min_qty)
+        ? Math.max(Math.trunc(item.min_qty), 0)
+        : '';
     const subName = resolveSubcategoryName(item, categories) ?? '';
+    const equipmentTypeName =
+      resolveEquipmentTypeName(item, options.equipmentTypes ?? []) ?? '';
     const checkedAtIso = trimOrNull(item.checked_at);
     const dateChecked = checkedAtIso
       ? formatDisplayDate(checkedAtIso)
@@ -728,9 +812,11 @@ export function exportItemsToCSV(
     return [
       item.category,
       subName,
+      equipmentTypeName,
       item.item,
       item.brand ?? '',
       safeQty,
+      minQtyCell,
       item.condition,
       item.owner ?? '',
       item.location ?? '',

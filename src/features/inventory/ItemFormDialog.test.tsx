@@ -117,6 +117,9 @@ function makeItem(overrides: Partial<EnrichedInventoryItem> = {}): EnrichedInven
     checkedBy: 'Dan Caleb',
     qty_on_loan: 0,
     available_qty: 2,
+    equipment_type_id: null,
+    equipment_type: null,
+    min_qty: null,
     activeLoans: [],
     ...overrides,
   };

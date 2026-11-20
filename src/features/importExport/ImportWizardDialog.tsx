@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/table';
 import { useAuth } from '@/features/auth/useAuth';
 import { getCategoryColor } from '@/features/categories/useCategories';
+import { getEquipmentTypeColor } from '@/features/equipmentTypes/useEquipmentTypes';
 import { CONDITION_META } from '@/features/inventory/inventoryUi';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { queryKeys } from '@/lib/queryKeys';
@@ -46,6 +47,7 @@ import {
 import type {
   Category,
   Database,
+  EquipmentType,
   ImportHistoryPayload,
   InventoryItem,
   LoanRecord,
@@ -67,7 +69,10 @@ export interface ImportWizardDialogProps {
   items: readonly EnrichedInventoryItem[];
   categories: readonly Category[];
   locations: readonly LocationRecord[];
+  equipmentTypes?: readonly EquipmentType[];
 }
+
+const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
 
 type InventoryInsert = Database['public']['Tables']['inventory']['Insert'];
 type InventoryUpdate = Database['public']['Tables']['inventory']['Update'];
@@ -112,9 +117,12 @@ function buildImportPrevSnapshot(item: EnrichedInventoryItem): Partial<Inventory
     category: item.category,
     category_id: item.category_id,
     subcategory_id: item.subcategory_id,
+    equipment_type_id: item.equipment_type_id ?? null,
+    equipment_type: item.equipment_type ?? null,
     item: item.item,
     brand: item.brand,
     qty: item.qty,
+    min_qty: item.min_qty ?? null,
     condition: item.condition,
     owner: item.owner,
     location: item.location,
@@ -220,10 +228,15 @@ export function ImportWizardDialog({
   items,
   categories,
   locations,
+  equipmentTypes,
 }: ImportWizardDialogProps) {
   const { role, user, profile } = useAuth();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const resolvedEquipmentTypes =
+    equipmentTypes ??
+    queryClient.getQueryData<EquipmentType[]>(queryKeys.equipmentTypes) ??
+    EMPTY_EQUIPMENT_TYPES;
 
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedImportItem[]>([]);
@@ -263,7 +276,7 @@ export function ImportWizardDialog({
         file.type === 'application/json';
 
       const parsed = isJson
-        ? parseJsonImportPayload(content, categories)
+        ? parseJsonImportPayload(content, categories, resolvedEquipmentTypes)
         : mapCsvRowsByHeader(parseCSV(content));
 
       if (parsed.length === 0) {
@@ -288,9 +301,13 @@ export function ImportWizardDialog({
     const existingLocationNames = new Set(
       locations.map((loc) => loc.name.trim().toLowerCase())
     );
+    const existingEquipmentTypeNames = new Set(
+      resolvedEquipmentTypes.map((et) => et.name.trim().toLowerCase())
+    );
 
     const newCategoryNames = new Set<string>();
     const newLocationNames = new Set<string>();
+    const newEquipmentTypeNames = new Set<string>();
     let matchedCount = 0;
     let loanEligibleCount = 0;
     let loanSkippedZeroQtyCount = 0;
@@ -305,6 +322,11 @@ export function ImportWizardDialog({
       const locName = trimOrNull(row.location);
       if (locName && !existingLocationNames.has(locName.toLowerCase())) {
         newLocationNames.add(locName);
+      }
+
+      const typeName = trimOrNull(row.equipment_type);
+      if (typeName && !existingEquipmentTypeNames.has(typeName.toLowerCase())) {
+        newEquipmentTypeNames.add(typeName);
       }
 
       const matchedExisting =
@@ -370,11 +392,12 @@ export function ImportWizardDialog({
       matchedCount,
       newCategories: [...newCategoryNames],
       newLocations: [...newLocationNames],
+      newEquipmentTypes: [...newEquipmentTypeNames],
       loanEligibleCount,
       loanSkippedZeroQtyCount,
       existingLoansSkippedCount,
     };
-  }, [categories, importMode, items, locations, parsedRows]);
+  }, [categories, importMode, items, locations, parsedRows, resolvedEquipmentTypes]);
 
   const handleStartImport = async () => {
     if (!isSupabaseConfigured) {
@@ -404,6 +427,7 @@ export function ImportWizardDialog({
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.categories }),
         queryClient.invalidateQueries({ queryKey: queryKeys.locations }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.equipmentTypes }),
         queryClient.invalidateQueries({ queryKey: queryKeys.loans }),
         queryClient.invalidateQueries({ queryKey: queryKeys.history }),
       ]);
@@ -412,6 +436,7 @@ export function ImportWizardDialog({
     try {
       const workingCategories = [...categories];
       const workingLocations = [...locations];
+      const workingEquipmentTypes = [...resolvedEquipmentTypes];
 
       const getNextCategoryOrder = (parentId: string | null) => {
         let maxOrder = 0;
@@ -428,6 +453,16 @@ export function ImportWizardDialog({
         for (const loc of workingLocations) {
           if (loc.sort_order > maxOrder) {
             maxOrder = loc.sort_order;
+          }
+        }
+        return maxOrder + 10;
+      };
+
+      const getNextEquipmentTypeOrder = () => {
+        let maxOrder = 0;
+        for (const et of workingEquipmentTypes) {
+          if (et.sort_order > maxOrder) {
+            maxOrder = et.sort_order;
           }
         }
         return maxOrder + 10;
@@ -526,6 +561,53 @@ export function ImportWizardDialog({
 
         anyDbWriteSucceeded = true;
         workingLocations.push(data);
+        return data;
+      };
+
+      const ensureEquipmentTypeRecord = async (
+        name: string | null
+      ): Promise<EquipmentType | null> => {
+        const trimmed = trimOrNull(name);
+        if (!trimmed) return null;
+
+        const findMatch = (list: readonly EquipmentType[]) =>
+          list.find((et) => et.name.trim().toLowerCase() === trimmed.toLowerCase());
+
+        const existing = findMatch(workingEquipmentTypes);
+        if (existing) return existing;
+
+        const color = getEquipmentTypeColor(trimmed, workingEquipmentTypes);
+        const { data, error } = await supabase
+          .from('equipment_types')
+          .insert([
+            {
+              name: trimmed,
+              color,
+              icon: 'tag',
+              sort_order: getNextEquipmentTypeOrder(),
+            },
+          ])
+          .select('*')
+          .single();
+
+        if (error) {
+          if (isUniqueConstraintError(error)) {
+            const { data: refreshed, error: refetchErr } = await supabase
+              .from('equipment_types')
+              .select('*');
+            if (!refetchErr && refreshed) {
+              workingEquipmentTypes.splice(0, workingEquipmentTypes.length, ...refreshed);
+              const concurrentMatch = findMatch(workingEquipmentTypes);
+              if (concurrentMatch) return concurrentMatch;
+            }
+          }
+          throw new Error(
+            `Failed to create equipment type "${trimmed}": ${error.message}`
+          );
+        }
+
+        anyDbWriteSucceeded = true;
+        workingEquipmentTypes.push(data);
         return data;
       };
 
@@ -647,8 +729,26 @@ export function ImportWizardDialog({
             updatePayload.location_id = locationRecord?.id ?? null;
           }
 
+          if (providedSet.has('equipment_type')) {
+            if (row.equipment_type) {
+              const typeRecord = await ensureEquipmentTypeRecord(row.equipment_type);
+              updatePayload.equipment_type = typeRecord?.name ?? row.equipment_type;
+              updatePayload.equipment_type_id = typeRecord?.id ?? null;
+            } else if (row.equipment_type_id) {
+              const existingType = workingEquipmentTypes.find(
+                (et) => et.id === row.equipment_type_id
+              );
+              updatePayload.equipment_type = existingType?.name ?? null;
+              updatePayload.equipment_type_id = existingType?.id ?? null;
+            } else {
+              updatePayload.equipment_type = null;
+              updatePayload.equipment_type_id = null;
+            }
+          }
+
           if (providedSet.has('brand')) updatePayload.brand = row.brand;
           if (providedSet.has('qty')) updatePayload.qty = row.qty;
+          if (providedSet.has('min_qty')) updatePayload.min_qty = row.min_qty;
           if (providedSet.has('condition')) updatePayload.condition = row.condition;
           if (providedSet.has('owner')) updatePayload.owner = row.owner;
           if (providedSet.has('remarks')) updatePayload.remarks = row.remarks;
@@ -702,6 +802,13 @@ export function ImportWizardDialog({
               workingCategories.find((c) => c.id === row.subcategory_id) ?? null;
           }
           const locationRecord = await ensureLocationRecord(row.location);
+          let equipmentTypeRecord: EquipmentType | null = null;
+          if (row.equipment_type) {
+            equipmentTypeRecord = await ensureEquipmentTypeRecord(row.equipment_type);
+          } else if (row.equipment_type_id) {
+            equipmentTypeRecord =
+              workingEquipmentTypes.find((et) => et.id === row.equipment_type_id) ?? null;
+          }
 
           const newId = `item_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 6)}`;
           const insertPayload: InventoryInsert = {
@@ -710,8 +817,11 @@ export function ImportWizardDialog({
             category: topCategory.name,
             category_id: topCategory.id,
             subcategory_id: subCategory?.id ?? null,
+            equipment_type: equipmentTypeRecord?.name ?? row.equipment_type ?? null,
+            equipment_type_id: equipmentTypeRecord?.id ?? null,
             brand: row.brand,
             qty: row.qty,
+            min_qty: row.min_qty,
             condition: row.condition,
             owner: row.owner,
             location: locationRecord?.name ?? row.location ?? null,
@@ -997,6 +1107,14 @@ export function ImportWizardDialog({
                     {previewSummary.newLocations.length === 1 ? 'location' : 'locations'}
                   </Badge>
                 )}
+                {previewSummary.newEquipmentTypes.length > 0 && (
+                  <Badge variant="outline">
+                    +{previewSummary.newEquipmentTypes.length} new{' '}
+                    {previewSummary.newEquipmentTypes.length === 1
+                      ? 'equipment type'
+                      : 'equipment types'}
+                  </Badge>
+                )}
                 {previewSummary.loanEligibleCount > 0 && (
                   <Badge variant="loaned">
                     {previewSummary.loanEligibleCount} active{' '}
@@ -1115,9 +1233,19 @@ export function ImportWizardDialog({
                                   {row.subcategory}
                                 </span>
                               )}
+                              {row.equipment_type && (
+                                <span className="block font-mono text-[10px] text-primary">
+                                  {row.equipment_type}
+                                </span>
+                              )}
                             </TableCell>
                             <TableCell className="font-mono text-xs font-semibold">
                               {row.qty}
+                              {row.min_qty !== null && (
+                                <span className="block text-[10px] font-normal text-muted-foreground">
+                                  Min: {row.min_qty}
+                                </span>
+                              )}
                             </TableCell>
                             <TableCell>
                               <Badge variant={condMeta.badgeVariant}>

@@ -4,9 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextValue } from '@/features/auth/useAuth';
+import { computeEquipmentTypeItemCounts } from '@/features/categories/categoryUi';
 import { buildCategoryTree } from '@/features/categories/useCategories';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import type { Category, LocationRecord, UserRole } from '@/types/database';
+import type { Category, EquipmentType, LocationRecord, UserRole } from '@/types/database';
 import { CategoriesPage } from './CategoriesPage';
 
 const mockUseAuth = vi.fn<() => AuthContextValue>();
@@ -19,6 +20,13 @@ const mockUseCategories = vi.fn<() => {
 }>();
 const mockUseLocations = vi.fn<() => {
   data: LocationRecord[];
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => void;
+}>();
+const mockUseEquipmentTypes = vi.fn<() => {
+  data: EquipmentType[];
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
@@ -38,6 +46,9 @@ const mockDeleteCategory = vi.fn();
 const mockCreateLocation = vi.fn();
 const mockUpdateLocation = vi.fn();
 const mockDeleteLocation = vi.fn();
+const mockCreateEquipmentType = vi.fn();
+const mockUpdateEquipmentType = vi.fn();
+const mockDeleteEquipmentType = vi.fn();
 
 vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => mockUseAuth(),
@@ -73,6 +84,25 @@ vi.mock('@/features/locations/useLocations', async () => {
       createLocation: mockCreateLocation,
       updateLocation: mockUpdateLocation,
       deleteLocation: mockDeleteLocation,
+      isCreating: false,
+      isUpdating: false,
+      isDeleting: false,
+      isSaving: false,
+    }),
+  };
+});
+
+vi.mock('@/features/equipmentTypes/useEquipmentTypes', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/features/equipmentTypes/useEquipmentTypes')
+  >('@/features/equipmentTypes/useEquipmentTypes');
+  return {
+    ...actual,
+    useEquipmentTypes: () => mockUseEquipmentTypes(),
+    useEquipmentTypeMutations: () => ({
+      createEquipmentType: mockCreateEquipmentType,
+      updateEquipmentType: mockUpdateEquipmentType,
+      deleteEquipmentType: mockDeleteEquipmentType,
       isCreating: false,
       isUpdating: false,
       isDeleting: false,
@@ -159,6 +189,25 @@ const sampleLocations: LocationRecord[] = [
   },
 ];
 
+const sampleEquipmentTypes: EquipmentType[] = [
+  {
+    id: 'et-cables',
+    name: 'Cables & Cords',
+    color: '#4e7fb0',
+    icon: 'cable',
+    sort_order: 20,
+    created_at: '2026-11-20T00:00:00.000Z',
+  },
+  {
+    id: 'et-inst',
+    name: 'Instruments',
+    color: '#2563EB',
+    icon: 'guitar',
+    sort_order: 10,
+    created_at: '2026-11-20T00:00:00.000Z',
+  },
+];
+
 const sampleItems: EnrichedInventoryItem[] = [
   {
     id: 'item-1',
@@ -180,6 +229,9 @@ const sampleItems: EnrichedInventoryItem[] = [
     checked_at: '2026-11-18T09:00:00.000Z',
     qty_on_loan: 0,
     available_qty: 1,
+    equipment_type_id: 'et-inst',
+    equipment_type: 'Instruments',
+    min_qty: null,
   },
   {
     id: 'item-2',
@@ -201,6 +253,9 @@ const sampleItems: EnrichedInventoryItem[] = [
     checked_at: '2026-11-18T09:00:00.000Z',
     qty_on_loan: 0,
     available_qty: 1,
+    equipment_type_id: null,
+    equipment_type: '  instruments  ',
+    min_qty: null,
   },
   {
     id: 'item-3',
@@ -222,6 +277,9 @@ const sampleItems: EnrichedInventoryItem[] = [
     checked_at: '2026-11-18T09:00:00.000Z',
     qty_on_loan: 0,
     available_qty: 1,
+    equipment_type_id: null,
+    equipment_type: null,
+    min_qty: null,
   },
   {
     id: 'item-4',
@@ -243,6 +301,9 @@ const sampleItems: EnrichedInventoryItem[] = [
     checked_at: '2026-11-18T09:00:00.000Z',
     qty_on_loan: 0,
     available_qty: 4,
+    equipment_type_id: 'et-cables',
+    equipment_type: 'Cables & Cords',
+    min_qty: null,
   },
 ];
 
@@ -292,6 +353,13 @@ function renderCategoriesPage(role: UserRole, initialEntry = '/categories') {
     error: null,
     refetch: vi.fn(),
   });
+  mockUseEquipmentTypes.mockReturnValue({
+    data: sampleEquipmentTypes,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  });
   mockUseInventoryItems.mockReturnValue({
     data: sampleItems,
     isLoading: false,
@@ -323,6 +391,32 @@ describe('buildCategoryTree', () => {
     expect(tree.map((node) => node.id)).toEqual(['cat-drums', 'cat-spares']);
     expect(tree[0].subcategories.map((sub) => sub.id)).toEqual(['sub-snare', 'sub-cymbals']);
     expect(tree[1].subcategories).toEqual([]);
+  });
+});
+
+describe('computeEquipmentTypeItemCounts', () => {
+  it('matches equipment_type_id first and falls back to case-insensitive equipment_type name', () => {
+    const counts = computeEquipmentTypeItemCounts(
+      [
+        ...sampleItems,
+        {
+          ...sampleItems[0],
+          id: 'item-stale-id',
+          equipment_type_id: 'et-deleted',
+          equipment_type: 'Instruments',
+        },
+        {
+          ...sampleItems[0],
+          id: 'item-id-overrides-name',
+          equipment_type_id: 'et-cables',
+          equipment_type: 'Instruments',
+        },
+      ],
+      sampleEquipmentTypes
+    );
+
+    expect(counts.get('et-inst')).toBe(2);
+    expect(counts.get('et-cables')).toBe(2);
   });
 });
 
@@ -365,6 +459,16 @@ describe('CategoriesPage', () => {
     });
     mockUpdateLocation.mockResolvedValue({});
     mockDeleteLocation.mockResolvedValue(undefined);
+    mockCreateEquipmentType.mockResolvedValue({
+      id: 'et-new',
+      name: 'Microphones',
+      color: '#d3554a',
+      icon: 'mic',
+      sort_order: 30,
+      created_at: '2026-11-20T00:00:00.000Z',
+    });
+    mockUpdateEquipmentType.mockResolvedValue({});
+    mockDeleteEquipmentType.mockResolvedValue(undefined);
   });
 
   it('renders 2-level categories, item counts, subcategory chips, and click-through links for Guests without CRUD controls', async () => {
@@ -616,6 +720,105 @@ describe('CategoriesPage', () => {
 
     await waitFor(() => {
       expect(mockDeleteCategory).toHaveBeenCalledWith('sub-snare');
+    });
+  });
+
+  it('supports the Equipment Types tab (?tab=types) with item counts, /inventory?type=<id> links, role guards, and Admin CRUD', async () => {
+    const user = userEvent.setup();
+
+    // 1. Guest visiting ?tab=types sees sorted equipment types, counts, and browse links with zero CRUD buttons
+    const { unmount } = renderCategoriesPage('guest', '/categories?tab=types');
+
+    const instCard = await screen.findByRole('article', { name: /instruments/i });
+    expect(within(instCard).getByText('2 items')).toBeInTheDocument();
+    expect(
+      within(instCard).getByRole('link', { name: /view.*instruments|browse.*instruments/i })
+    ).toHaveAttribute('href', '/inventory?type=et-inst');
+
+    const cablesCard = screen.getByRole('article', { name: /cables & cords/i });
+    expect(within(cablesCard).getByText('1 item')).toBeInTheDocument();
+    expect(
+      within(cablesCard).getByRole('link', { name: /view.*cables & cords/i })
+    ).toHaveAttribute('href', '/inventory?type=et-cables');
+
+    expect(screen.queryByRole('button', { name: /add equipment type/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
+    unmount();
+
+    // 2. Band Member switching to Equipment Types tab sees zero CRUD controls
+    const { unmount: unmountMember } = renderCategoriesPage('member');
+    await user.click(screen.getByRole('tab', { name: /equipment types/i }));
+    expect(await screen.findByRole('article', { name: /instruments/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add equipment type/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
+    unmountMember();
+
+    // 3. Admin can create, edit, see duplicate error, and delete equipment types with linked item confirmation
+    renderCategoriesPage('admin');
+    await user.click(screen.getByRole('tab', { name: /equipment types/i }));
+
+    await user.click(await screen.findByRole('button', { name: /add equipment type/i }));
+    const createDialog = await screen.findByRole('dialog');
+    await user.type(within(createDialog).getByLabelText(/type name/i), '  Microphones  ');
+    await user.type(within(createDialog).getByLabelText(/sort order/i), '30');
+    await user.click(within(createDialog).getByRole('button', { name: /mic/i }));
+    await user.click(
+      within(createDialog).getByRole('button', { name: /select color guitar crimson/i })
+    );
+    await user.click(within(createDialog).getByRole('button', { name: /create equipment type/i }));
+
+    await waitFor(() => {
+      expect(mockCreateEquipmentType).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Microphones',
+          color: '#d3554a',
+          icon: 'mic',
+          sort_order: 30,
+        })
+      );
+    });
+
+    // Duplicate error surfaces inline inside EquipmentTypeDialog
+    mockCreateEquipmentType.mockRejectedValueOnce(
+      new Error('An equipment type named "Instruments" already exists.')
+    );
+    await user.click(screen.getByRole('button', { name: /add equipment type/i }));
+    const dupDialog = await screen.findByRole('dialog');
+    await user.type(within(dupDialog).getByLabelText(/type name/i), 'Instruments');
+    await user.click(within(dupDialog).getByRole('button', { name: /create equipment type/i }));
+    expect(await within(dupDialog).findByRole('alert')).toHaveTextContent(/already exists/i);
+    await user.click(within(dupDialog).getByRole('button', { name: /cancel/i }));
+
+    // Edit Cables & Cords
+    const adminCablesCard = screen.getByRole('article', { name: /cables & cords/i });
+    await user.click(within(adminCablesCard).getByRole('button', { name: /edit cables & cords/i }));
+    const editDialog = await screen.findByRole('dialog');
+    const editNameInput = within(editDialog).getByLabelText(/type name/i);
+    await user.clear(editNameInput);
+    await user.type(editNameInput, 'Stage Cables');
+    await user.click(within(editDialog).getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateEquipmentType).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'et-cables',
+          name: 'Stage Cables',
+          previousName: 'Cables & Cords',
+        })
+      );
+    });
+
+    // Delete Instruments -> AlertDialog shows 2 linked inventory items
+    const adminInstCard = screen.getByRole('article', { name: /instruments/i });
+    await user.click(within(adminInstCard).getByRole('button', { name: /delete instruments/i }));
+    const alertDialog = await screen.findByRole('alertdialog');
+    expect(within(alertDialog).getByText(/2 inventory items/i)).toBeInTheDocument();
+
+    await user.click(within(alertDialog).getByRole('button', { name: /delete equipment type/i }));
+    await waitFor(() => {
+      expect(mockDeleteEquipmentType).toHaveBeenCalledWith('et-inst');
     });
   });
 });

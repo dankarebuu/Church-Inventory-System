@@ -292,6 +292,9 @@ describe('useActivityLog', () => {
         category: 'Drums',
         qty: 0,
         condition: 'working',
+        equipment_type_id: 'et-inst',
+        equipment_type: 'Instruments',
+        min_qty: 2,
         remarks: 'Before edit',
       } as Partial<InventoryItem> & Record<string, unknown>,
     });
@@ -308,6 +311,9 @@ describe('useActivityLog', () => {
       category: 'Drums',
       qty: 0,
       condition: 'working',
+      equipment_type_id: 'et-inst',
+      equipment_type: 'Instruments',
+      min_qty: 2,
       remarks: 'Before edit',
     });
     expect('id' in (invUpdate?.payload ?? {})).toBe(false);

@@ -160,6 +160,9 @@ describe('checklistUtils', () => {
         checkedBy: 'Dan Caleb',
         qty_on_loan: 1,
         available_qty: 1,
+        equipment_type_id: null,
+        equipment_type: null,
+        min_qty: null,
         activeLoans: [
           {
             id: 'loan-1',
@@ -197,6 +200,9 @@ describe('checklistUtils', () => {
         checkedBy: 'Eli Cruz',
         qty_on_loan: 0,
         available_qty: 0,
+        equipment_type_id: null,
+        equipment_type: null,
+        min_qty: null,
         activeLoans: [],
       },
     ];

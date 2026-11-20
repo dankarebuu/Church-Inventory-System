@@ -182,6 +182,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       checked_at: checkedYesterdayIso,
       qty_on_loan: 1,
       available_qty: 1,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
     },
     {
       id: 'item-mic',
@@ -203,6 +206,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       checked_at: checkedTodayIso,
       qty_on_loan: 0,
       available_qty: 4,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
     },
     {
       id: 'item-zero-cable',
@@ -224,6 +230,9 @@ function makeSampleItems(role: UserRole): EnrichedInventoryItem[] {
       checked_at: null,
       qty_on_loan: 0,
       available_qty: 0,
+      equipment_type_id: null,
+      equipment_type: null,
+      min_qty: null,
     },
   ];
 

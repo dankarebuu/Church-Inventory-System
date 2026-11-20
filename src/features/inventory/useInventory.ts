@@ -13,10 +13,12 @@ import {
 import type {
   Category,
   Database,
+  EquipmentType,
   InventoryItem,
   ItemCondition,
   LoanRecord,
   LocationRecord,
+  MemberAddPhotoResult,
   MemberCheckItemResult,
   PublicInventoryItem,
   UserRole,
@@ -54,6 +56,29 @@ export interface MemberCheckItemInput {
   remarks?: string | null;
 }
 
+export interface AddItemPhotoInput {
+  itemId: string;
+  file: File;
+  existingPhotoCount?: number;
+}
+
+export interface BulkUpdateItemsInput {
+  itemIds: readonly string[];
+  category_id?: string | null;
+  category?: string | null;
+  subcategory_id?: string | null;
+  equipment_type_id?: string | null;
+  equipment_type?: string | null;
+  location_id?: string | null;
+  location?: string | null;
+}
+
+export interface BulkUpdateItemsResult {
+  updatedCount: number;
+  skippedCount: number;
+  updatedIds: string[];
+}
+
 export type SoftDeleteTarget =
   | string
   | Pick<InventoryItem, 'id'>
@@ -79,9 +104,12 @@ function toInventorySnapshot(
     category: item.category,
     category_id: item.category_id,
     subcategory_id: item.subcategory_id,
+    equipment_type_id: item.equipment_type_id ?? null,
+    equipment_type: item.equipment_type ?? null,
     item: item.item,
     brand: item.brand,
     qty: item.qty,
+    min_qty: item.min_qty ?? null,
     condition: item.condition,
     owner: item.owner,
     location: item.location,
@@ -236,6 +264,9 @@ export function enrichItemsWithLoans(
       checkedBy: item.checkedBy,
       updated_at: item.updated_at,
       deleted_at: item.deleted_at,
+      equipment_type_id: item.equipment_type_id ?? null,
+      equipment_type: item.equipment_type ?? null,
+      min_qty: item.min_qty ?? null,
       qty_on_loan: qtyOnLoan,
       available_qty: availableQty,
       activeLoans: loanSummary?.loans ?? [],
@@ -268,6 +299,9 @@ function normalizePublicInventoryItem(row: PublicInventoryItem): EnrichedInvento
     remarks: row.remarks,
     dateChecked: row.dateChecked,
     checked_at: row.checked_at,
+    equipment_type_id: row.equipment_type_id ?? null,
+    equipment_type: row.equipment_type ?? null,
+    min_qty: row.min_qty ?? null,
     qty_on_loan: qtyOnLoan,
     available_qty: availableQty,
   };
@@ -386,6 +420,8 @@ export function useItemMutations() {
         queryClient.getQueryData<Category[]>(queryKeys.categories) ?? [];
       const cachedLocations =
         queryClient.getQueryData<LocationRecord[]>(queryKeys.locations) ?? [];
+      const cachedEquipmentTypes =
+        queryClient.getQueryData<EquipmentType[]>(queryKeys.equipmentTypes) ?? [];
 
       const matchedCategory = parsed.category_id
         ? cachedCategories.find((cat) => cat.id === parsed.category_id)
@@ -404,6 +440,18 @@ export function useItemMutations() {
       const resolvedLocation =
         trimOrNull(parsed.location) ?? trimOrNull(matchedLocation?.name) ?? null;
 
+      const matchedEquipmentType = parsed.equipment_type_id
+        ? cachedEquipmentTypes.find((et) => et.id === parsed.equipment_type_id)
+        : undefined;
+      const resolvedEquipmentType =
+        trimOrNull(parsed.equipment_type) ??
+        trimOrNull(matchedEquipmentType?.name) ??
+        (input.existingItem &&
+        input.existingItem.equipment_type_id === parsed.equipment_type_id
+          ? trimOrNull(input.existingItem.equipment_type)
+          : null) ??
+        null;
+
       const now = new Date();
       const nowIso = now.toISOString();
       const actorName = deriveActorName(profile, user);
@@ -414,8 +462,11 @@ export function useItemMutations() {
         category: resolvedCategory,
         category_id: parsed.category_id,
         subcategory_id: parsed.subcategory_id,
+        equipment_type_id: parsed.equipment_type_id,
+        equipment_type: resolvedEquipmentType,
         brand: trimOrNull(parsed.brand),
         qty: parsed.qty,
+        min_qty: parsed.min_qty,
         condition: parsed.condition,
         owner: trimOrNull(parsed.owner),
         location: resolvedLocation,
@@ -630,10 +681,284 @@ export function useItemMutations() {
     },
   });
 
+  const addPhotoMutation = useMutation<
+    MemberAddPhotoResult,
+    Error,
+    AddItemPhotoInput
+  >({
+    mutationFn: async (input) => {
+      if (!isSupabaseConfigured) {
+        throw new Error('Supabase is not configured.');
+      }
+      if (role !== 'member' && role !== 'admin') {
+        throw new Error('Only authenticated band members or admins can add item photos.');
+      }
+
+      const trimmedItemId = input.itemId.trim();
+      if (!trimmedItemId) {
+        throw new Error('Item ID is required.');
+      }
+
+      const { publicUrls, storagePaths } = await uploadPhotoBatch(
+        [input.file],
+        input.existingPhotoCount ?? 0
+      );
+      const publicUrl = publicUrls[0];
+      if (!publicUrl) {
+        await cleanupUploadedPaths(storagePaths);
+        throw new Error('Failed to resolve uploaded photo URL.');
+      }
+
+      let rpcResult: MemberAddPhotoResult;
+      try {
+        const { data, error } = await supabase.rpc('member_add_item_photo', {
+          p_item_id: trimmedItemId,
+          p_photo_url: publicUrl,
+        });
+        if (error) {
+          throw new Error(error.message);
+        }
+        rpcResult = data;
+      } catch (err) {
+        await cleanupUploadedPaths(storagePaths);
+        throw err instanceof Error ? err : new Error('Failed to attach photo to item.');
+      }
+
+      await invalidateInventoryAndHistory();
+      return rpcResult;
+    },
+  });
+
+  const bulkUpdateMutation = useMutation<
+    BulkUpdateItemsResult,
+    Error,
+    BulkUpdateItemsInput
+  >({
+    mutationFn: async (input) => {
+      if (!isSupabaseConfigured) {
+        throw new Error('Supabase is not configured.');
+      }
+      if (role !== 'admin') {
+        throw new Error('Only administrators can bulk-update inventory items.');
+      }
+
+      const uniqueIds = Array.from(
+        new Set(input.itemIds.map((id) => id.trim()).filter((id) => id.length > 0))
+      );
+      if (uniqueIds.length === 0) {
+        throw new Error('Select at least one inventory item to update.');
+      }
+
+      const hasCategory =
+        input.category_id !== undefined || input.category !== undefined;
+      const hasSubcategory = input.subcategory_id !== undefined;
+      const hasEquipmentType =
+        input.equipment_type_id !== undefined || input.equipment_type !== undefined;
+      const hasLocation =
+        input.location_id !== undefined || input.location !== undefined;
+
+      if (!hasCategory && !hasSubcategory && !hasEquipmentType && !hasLocation) {
+        throw new Error('Choose at least one field to update.');
+      }
+
+      const cachedCategories =
+        queryClient.getQueryData<Category[]>(queryKeys.categories) ?? [];
+      const cachedEquipmentTypes =
+        queryClient.getQueryData<EquipmentType[]>(queryKeys.equipmentTypes) ?? [];
+      const cachedLocations =
+        queryClient.getQueryData<LocationRecord[]>(queryKeys.locations) ?? [];
+
+      let resolvedCategoryId: string | null = null;
+      let resolvedCategoryName: string | null = null;
+      if (hasCategory) {
+        resolvedCategoryId = trimOrNull(input.category_id);
+        const matchedCat = resolvedCategoryId
+          ? cachedCategories.find((cat) => cat.id === resolvedCategoryId)
+          : undefined;
+        resolvedCategoryName =
+          trimOrNull(input.category) ?? trimOrNull(matchedCat?.name) ?? null;
+        if (resolvedCategoryId && !resolvedCategoryName) {
+          resolvedCategoryName = 'Others';
+        }
+        if (!resolvedCategoryId && !resolvedCategoryName) {
+          throw new Error('Category is required when updating category.');
+        }
+      }
+
+      const resolvedSubcategoryId = hasSubcategory
+        ? trimOrNull(input.subcategory_id)
+        : null;
+
+      let resolvedEquipmentTypeId: string | null = null;
+      let resolvedEquipmentTypeName: string | null = null;
+      if (hasEquipmentType) {
+        resolvedEquipmentTypeId = trimOrNull(input.equipment_type_id);
+        const matchedType = resolvedEquipmentTypeId
+          ? cachedEquipmentTypes.find((et) => et.id === resolvedEquipmentTypeId)
+          : undefined;
+        resolvedEquipmentTypeName =
+          trimOrNull(input.equipment_type) ?? trimOrNull(matchedType?.name) ?? null;
+      }
+
+      let resolvedLocationId: string | null = null;
+      let resolvedLocationName: string | null = null;
+      if (hasLocation) {
+        resolvedLocationId = trimOrNull(input.location_id);
+        const matchedLoc = resolvedLocationId
+          ? cachedLocations.find((loc) => loc.id === resolvedLocationId)
+          : undefined;
+        resolvedLocationName =
+          trimOrNull(input.location) ?? trimOrNull(matchedLoc?.name) ?? null;
+      }
+
+      const { data: fetchedItems, error: fetchError } = await supabase
+        .from('inventory')
+        .select('*')
+        .in('id', uniqueIds)
+        .is('deleted_at', null);
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      const existingById = new Map<string, InventoryItem>(
+        (fetchedItems ?? []).map((item) => [item.id, item])
+      );
+
+      const nowIso = new Date().toISOString();
+      const actorEmail = user?.email ?? profile?.email ?? 'unknown';
+      const updatedIds: string[] = [];
+      const historyEntries: HistoryInsert[] = [];
+      let skippedCount = 0;
+
+      const persistHistoryBatch = async () => {
+        if (historyEntries.length === 0) return null;
+        const { error: historyError } = await supabase
+          .from('history_log')
+          .insert(historyEntries);
+        return historyError;
+      };
+
+      for (const itemId of uniqueIds) {
+        const prevItem = existingById.get(itemId);
+        if (!prevItem) {
+          skippedCount += 1;
+          continue;
+        }
+
+        const itemPatch: InventoryUpdate = {};
+
+        if (hasCategory && resolvedCategoryName) {
+          const categoryChanged =
+            (prevItem.category_id ?? null) !== resolvedCategoryId ||
+            prevItem.category !== resolvedCategoryName;
+          if (categoryChanged) {
+            itemPatch.category_id = resolvedCategoryId;
+            itemPatch.category = resolvedCategoryName;
+            if (
+              !hasSubcategory &&
+              prevItem.subcategory_id !== null &&
+              (prevItem.category_id ?? null) !== resolvedCategoryId
+            ) {
+              itemPatch.subcategory_id = null;
+            }
+          }
+        }
+
+        if (hasSubcategory) {
+          if ((prevItem.subcategory_id ?? null) !== resolvedSubcategoryId) {
+            itemPatch.subcategory_id = resolvedSubcategoryId;
+          }
+        }
+
+        if (hasEquipmentType) {
+          const typeChanged =
+            (prevItem.equipment_type_id ?? null) !== resolvedEquipmentTypeId ||
+            (prevItem.equipment_type ?? null) !== resolvedEquipmentTypeName;
+          if (typeChanged) {
+            itemPatch.equipment_type_id = resolvedEquipmentTypeId;
+            itemPatch.equipment_type = resolvedEquipmentTypeName;
+          }
+        }
+
+        if (hasLocation) {
+          const locationChanged =
+            (prevItem.location_id ?? null) !== resolvedLocationId ||
+            (prevItem.location ?? null) !== resolvedLocationName;
+          if (locationChanged) {
+            itemPatch.location_id = resolvedLocationId;
+            itemPatch.location = resolvedLocationName;
+          }
+        }
+
+        if (Object.keys(itemPatch).length === 0) {
+          skippedCount += 1;
+          continue;
+        }
+
+        itemPatch.updated_at = nowIso;
+
+        const { error: updateError } = await supabase
+          .from('inventory')
+          .update(itemPatch)
+          .eq('id', prevItem.id);
+
+        if (updateError) {
+          await persistHistoryBatch();
+          if (updatedIds.length > 0) {
+            await invalidateInventoryAndHistory();
+          }
+          throw new Error(updateError.message);
+        }
+
+        const prevSnapshot = toInventorySnapshot(prevItem);
+        const nextSnapshot: Partial<InventoryItem> = {
+          ...prevSnapshot,
+          ...itemPatch,
+          id: prevItem.id,
+        };
+
+        updatedIds.push(prevItem.id);
+        historyEntries.push({
+          id: createHistoryId(),
+          action: 'updated',
+          item_id: prevItem.id,
+          item_data: nextSnapshot,
+          prev_data: prevSnapshot,
+          user_email: actorEmail,
+          undone: false,
+          timestamp: nowIso,
+        });
+      }
+
+      if (updatedIds.length === 0) {
+        return {
+          updatedCount: 0,
+          skippedCount,
+          updatedIds: [],
+        };
+      }
+
+      const historyError = await persistHistoryBatch();
+      await invalidateInventoryAndHistory();
+      if (historyError) {
+        throw new Error(historyError.message);
+      }
+
+      return {
+        updatedCount: updatedIds.length,
+        skippedCount,
+        updatedIds,
+      };
+    },
+  });
+
   const { mutateAsync: runUpload } = uploadMutation;
   const { mutateAsync: runSave } = saveMutation;
   const { mutateAsync: runSoftDelete } = softDeleteMutation;
   const { mutateAsync: runMemberCheck } = memberCheckMutation;
+  const { mutateAsync: runAddPhoto } = addPhotoMutation;
+  const { mutateAsync: runBulkUpdate } = bulkUpdateMutation;
 
   const uploadGearPhotos = useCallback(
     (files: readonly File[], existingCount = 0) =>
@@ -656,14 +981,28 @@ export function useItemMutations() {
     [runMemberCheck]
   );
 
+  const addItemPhoto = useCallback(
+    (input: AddItemPhotoInput) => runAddPhoto(input),
+    [runAddPhoto]
+  );
+
+  const bulkUpdateItems = useCallback(
+    (input: BulkUpdateItemsInput) => runBulkUpdate(input),
+    [runBulkUpdate]
+  );
+
   return {
     saveItem,
     softDeleteItem,
     memberCheckItem,
     uploadGearPhotos,
+    addItemPhoto,
+    bulkUpdateItems,
     isSaving: saveMutation.isPending,
     isDeleting: softDeleteMutation.isPending,
     isChecking: memberCheckMutation.isPending,
     isUploading: uploadMutation.isPending,
+    isAddingPhoto: addPhotoMutation.isPending,
+    isBulkUpdating: bulkUpdateMutation.isPending,
   };
 }

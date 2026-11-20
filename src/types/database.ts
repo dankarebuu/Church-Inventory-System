@@ -33,6 +33,9 @@ export type InventoryItem = {
   serial: string | null;
   description: string | null;
   image_filename: string | null;
+  equipment_type_id: string | null;
+  equipment_type: string | null;
+  min_qty: number | null;
   deleted_at: string | null;
 };
 
@@ -56,6 +59,39 @@ export type PublicInventoryItem = {
   checked_at: string | null;
   qty_on_loan: number;
   available_qty: number;
+  equipment_type_id: string | null;
+  equipment_type: string | null;
+  min_qty: number | null;
+};
+
+export type EquipmentType = {
+  id: string;
+  name: string;
+  color: string;
+  icon: string | null;
+  sort_order: number;
+  created_at: string;
+};
+
+export type CommentTag = 'note' | 'issue' | 'repair' | 'setup';
+
+export type ItemComment = {
+  id: string;
+  item_id: string;
+  user_id: string | null;
+  author_name: string;
+  author_email: string;
+  tag: CommentTag;
+  body: string;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MemberAddPhotoResult = {
+  id: string;
+  image_filename: string | null;
+  photos: string[];
 };
 
 export type Category = {
@@ -182,6 +218,36 @@ export type Database = {
         Update: Partial<LocationRecord>;
         Relationships: [];
       };
+      equipment_types: {
+        Row: EquipmentType;
+        Insert: {
+          id?: string;
+          name: string;
+          color?: string;
+          icon?: string | null;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: Partial<EquipmentType>;
+        Relationships: [];
+      };
+      item_comments: {
+        Row: ItemComment;
+        Insert: {
+          id?: string;
+          item_id: string;
+          user_id?: string | null;
+          author_name?: string;
+          author_email?: string;
+          tag?: CommentTag;
+          body: string;
+          pinned?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<ItemComment>;
+        Relationships: [];
+      };
       loans: {
         Row: LoanRecord;
         Insert: {
@@ -243,6 +309,13 @@ export type Database = {
           p_remarks?: string | null;
         };
         Returns: MemberCheckItemResult;
+      };
+      member_add_item_photo: {
+        Args: {
+          p_item_id: string;
+          p_photo_url: string;
+        };
+        Returns: MemberAddPhotoResult;
       };
       current_user_role: {
         Args: Record<string, never>;

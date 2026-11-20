@@ -23,9 +23,12 @@ const MUTABLE_INVENTORY_FIELDS = [
   'category',
   'category_id',
   'subcategory_id',
+  'equipment_type_id',
+  'equipment_type',
   'item',
   'brand',
   'qty',
+  'min_qty',
   'condition',
   'owner',
   'location',
@@ -155,8 +158,14 @@ export function describeHistoryEntry(entry: HistoryEntry): string {
       if (prevData.category !== itemData.category) {
         changes.push(`Category -> ${formatFieldValue(itemData.category)}`);
       }
+      if (prevData.equipment_type !== itemData.equipment_type) {
+        changes.push(`Type -> ${formatFieldValue(itemData.equipment_type)}`);
+      }
       if (prevData.location !== itemData.location) {
         changes.push(`Location -> ${formatFieldValue(itemData.location)}`);
+      }
+      if (prevData.min_qty !== itemData.min_qty) {
+        changes.push(`Min Qty ${formatFieldValue(prevData.min_qty)} -> ${formatFieldValue(itemData.min_qty)}`);
       }
       if (prevData.owner !== itemData.owner) {
         changes.push(`Owner -> ${formatFieldValue(itemData.owner)}`);

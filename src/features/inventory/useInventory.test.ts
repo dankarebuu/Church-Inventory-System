@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '@/lib/queryKeys';
 import type {
   Category,
+  EquipmentType,
   InventoryItem,
   LoanRecord,
   LocationRecord,
@@ -74,6 +75,7 @@ const {
 
     const selectBuilder = {
       eq: vi.fn(() => eqChain),
+      in: vi.fn(() => eqChain),
       is: vi.fn(async () => getResult()),
       then: (
         onFulfilled: (value: TableResult) => unknown,
@@ -171,6 +173,9 @@ function makeInventoryItem(overrides: Partial<InventoryItem> = {}): InventoryIte
     serial: 'SN-100',
     description: '14 inch brass snare',
     image_filename: null,
+    equipment_type_id: null,
+    equipment_type: null,
+    min_qty: null,
     deleted_at: null,
     ...overrides,
   };
@@ -197,6 +202,9 @@ function makePublicItem(overrides: Partial<PublicInventoryItem> = {}): PublicInv
     checked_at: '2026-11-18T09:00:00.000Z',
     qty_on_loan: 1,
     available_qty: 2,
+    equipment_type_id: null,
+    equipment_type: null,
+    min_qty: null,
     ...overrides,
   };
 }
@@ -959,6 +967,316 @@ describe('useItemMutations', () => {
     });
     expect(rpcResult.action).toBe('updated');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('member') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
+  });
+
+  it('persists equipment_type_id, resolved equipment_type from cache, and min_qty (including 0) in saveItem and snapshots', async () => {
+    mockAuthState.role = 'admin';
+    const queryClient = createTestQueryClient();
+    const equipmentTypes: EquipmentType[] = [
+      {
+        id: 'et-cables',
+        name: 'Cables & Cords',
+        color: '#4e7fb0',
+        icon: 'cable',
+        sort_order: 60,
+        created_at: '2026-11-20T00:00:00.000Z',
+      },
+    ];
+    queryClient.setQueryData(queryKeys.equipmentTypes, equipmentTypes);
+
+    const { result } = renderHook(() => useItemMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await result.current.saveItem({
+      values: {
+        item: 'XLR Spare',
+        category: 'Spares & Shared',
+        category_id: 'cat-spares',
+        subcategory_id: null,
+        equipment_type_id: 'et-cables',
+        equipment_type: '',
+        min_qty: '0',
+        brand: 'Mogami',
+        qty: 3,
+        condition: 'working',
+        owner: 'Church Property',
+        location: 'Stage',
+        location_id: 'loc-stage',
+        serial: '',
+        description: '',
+        remarks: '',
+      },
+    });
+
+    const invInsert = insertCalls.find((c) => c.table === 'inventory');
+    const invRow = (invInsert?.payload as Array<Record<string, unknown>>)[0];
+    expect(invRow.equipment_type_id).toBe('et-cables');
+    expect(invRow.equipment_type).toBe('Cables & Cords');
+    expect(invRow.min_qty).toBe(0);
+
+    await result.current.saveItem({
+      existingItem: {
+        ...makeInventoryItem({
+          id: 'item_et_upd',
+          equipment_type_id: 'et-cables',
+          equipment_type: 'Cables & Cords',
+          min_qty: 2,
+        }),
+        qty_on_loan: 0,
+        available_qty: 3,
+      },
+      values: {
+        item: 'XLR Spare',
+        category: 'Spares & Shared',
+        category_id: 'cat-spares',
+        subcategory_id: null,
+        equipment_type_id: null,
+        equipment_type: '',
+        min_qty: '',
+        brand: 'Mogami',
+        qty: 3,
+        condition: 'working',
+        owner: 'Church Property',
+        location: 'Stage',
+        location_id: 'loc-stage',
+        serial: '',
+        description: '',
+        remarks: '',
+      },
+    });
+
+    expect(updateCalls[0].payload.equipment_type_id).toBeNull();
+    expect(updateCalls[0].payload.equipment_type).toBeNull();
+    expect(updateCalls[0].payload.min_qty).toBeNull();
+
+    const updHistInsert = insertCalls.find(
+      (c) =>
+        c.table === 'history_log' &&
+        (c.payload as Array<Record<string, unknown>>)[0]?.action === 'updated'
+    );
+    const updHistRow = (updHistInsert?.payload as Array<Record<string, unknown>>)[0];
+    expect((updHistRow.prev_data as Record<string, unknown>).equipment_type_id).toBe('et-cables');
+    expect((updHistRow.prev_data as Record<string, unknown>).equipment_type).toBe('Cables & Cords');
+    expect((updHistRow.prev_data as Record<string, unknown>).min_qty).toBe(2);
+  });
+
+  it('supports addItemPhoto for member & admin, validates 4-photo cap/MIME, and rolls back storage upload when RPC fails', async () => {
+    const queryClient = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    // 1. Guest is blocked
+    mockAuthState.role = 'guest';
+    const guestHook = renderHook(() => useItemMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+    const validFile = new File(['img'], 'gear.png', { type: 'image/png' });
+
+    await expect(
+      guestHook.result.current.addItemPhoto({
+        itemId: 'item_1',
+        file: validFile,
+        existingPhotoCount: 0,
+      })
+    ).rejects.toThrow(/member|admin/i);
+    expect(mockStorageBucket.upload).not.toHaveBeenCalled();
+
+    // 2. Member blocked at 4-photo cap before uploading
+    mockAuthState.role = 'member';
+    const memberHook = renderHook(() => useItemMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await expect(
+      memberHook.result.current.addItemPhoto({
+        itemId: 'item_1',
+        file: validFile,
+        existingPhotoCount: 4,
+      })
+    ).rejects.toThrow(/4/);
+    expect(mockStorageBucket.upload).not.toHaveBeenCalled();
+
+    // 3. Member success uploads, calls member_add_item_photo RPC, and invalidates queries
+    mockStorageBucket.upload.mockResolvedValue({ error: null });
+    mockStorageBucket.getPublicUrl.mockImplementation((path: string) => ({
+      data: {
+        publicUrl: `https://proj.supabase.co/storage/v1/object/public/gear-photos/${path}`,
+      },
+    }));
+    mockRpc.mockResolvedValueOnce({
+      data: {
+        id: 'item_1',
+        image_filename:
+          '["https://proj.supabase.co/storage/v1/object/public/gear-photos/photo.png"]',
+        photos: ['https://proj.supabase.co/storage/v1/object/public/gear-photos/photo.png'],
+      },
+      error: null,
+    });
+
+    const added = await memberHook.result.current.addItemPhoto({
+      itemId: 'item_1',
+      file: validFile,
+      existingPhotoCount: 1,
+    });
+
+    expect(mockStorageFrom).toHaveBeenCalledWith('gear-photos');
+    expect(mockStorageBucket.upload).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith('member_add_item_photo', {
+      p_item_id: 'item_1',
+      p_photo_url: expect.stringMatching(
+        /^https:\/\/proj\.supabase\.co\/storage\/v1\/object\/public\/gear-photos\//
+      ),
+    });
+    expect(added.photos).toHaveLength(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('member') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
+
+    // 4. Admin success + rollback via remove() when RPC fails
+    mockAuthState.role = 'admin';
+    mockStorageBucket.remove.mockResolvedValue({ data: [], error: null });
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'Maximum of 4 photos reached' },
+    });
+
+    const adminHook = renderHook(() => useItemMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(
+      adminHook.result.current.addItemPhoto({
+        itemId: 'item_1',
+        file: validFile,
+        existingPhotoCount: 3,
+      })
+    ).rejects.toThrow(/maximum of 4 photos/i);
+
+    expect(mockStorageBucket.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('enforces admin guard, skips unchanged rows, updates selected items, logs undoable updated history, and invalidates queries in bulkUpdateItems', async () => {
+    const queryClient = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    mockAuthState.role = 'member';
+    const memberHook = renderHook(() => useItemMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await expect(
+      memberHook.result.current.bulkUpdateItems({
+        itemIds: ['item_1'],
+        location_id: 'loc-booth',
+      })
+    ).rejects.toThrow(/admin/i);
+
+    mockAuthState.role = 'admin';
+    const adminHook = renderHook(() => useItemMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(
+      adminHook.result.current.bulkUpdateItems({
+        itemIds: [],
+        location_id: 'loc-booth',
+      })
+    ).rejects.toThrow(/select at least one/i);
+
+    queryClient.setQueryData(queryKeys.categories, [
+      {
+        id: 'cat-spares',
+        name: 'Spares & Shared',
+        parent_id: null,
+        color: '#4e7fb0',
+        icon: 'cable',
+        sort_order: 70,
+        created_at: '2026-11-18T00:00:00.000Z',
+      },
+    ] satisfies Category[]);
+    queryClient.setQueryData(queryKeys.equipmentTypes, [
+      {
+        id: 'et-cables',
+        name: 'Cables & Cords',
+        color: '#4e7fb0',
+        icon: 'cable',
+        sort_order: 60,
+        created_at: '2026-11-20T00:00:00.000Z',
+      },
+    ] satisfies EquipmentType[]);
+    queryClient.setQueryData(queryKeys.locations, [
+      {
+        id: 'loc-booth',
+        name: 'Sound Booth',
+        description: null,
+        sort_order: 20,
+        created_at: '2026-11-18T00:00:00.000Z',
+      },
+    ] satisfies LocationRecord[]);
+
+    const itemChanged = makeInventoryItem({
+      id: 'item_a',
+      category: 'Drums',
+      category_id: 'cat-drums',
+      subcategory_id: 'sub-snare',
+      equipment_type_id: null,
+      equipment_type: null,
+      location: 'Stage',
+      location_id: 'loc-stage',
+    });
+    const itemUnchanged = makeInventoryItem({
+      id: 'item_b',
+      category: 'Spares & Shared',
+      category_id: 'cat-spares',
+      subcategory_id: null,
+      equipment_type_id: 'et-cables',
+      equipment_type: 'Cables & Cords',
+      location: 'Sound Booth',
+      location_id: 'loc-booth',
+    });
+
+    tableQueries.set('inventory', {
+      data: [itemChanged, itemUnchanged],
+      error: null,
+    });
+
+    const bulkResult = await adminHook.result.current.bulkUpdateItems({
+      itemIds: ['item_a', 'item_b'],
+      category_id: 'cat-spares',
+      equipment_type_id: 'et-cables',
+      location_id: 'loc-booth',
+    });
+
+    expect(bulkResult).toEqual({
+      updatedCount: 1,
+      skippedCount: 1,
+      updatedIds: ['item_a'],
+    });
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]).toEqual({
+      table: 'inventory',
+      col: 'id',
+      id: 'item_a',
+      payload: expect.objectContaining({
+        category_id: 'cat-spares',
+        category: 'Spares & Shared',
+        subcategory_id: null,
+        equipment_type_id: 'et-cables',
+        equipment_type: 'Cables & Cords',
+        location_id: 'loc-booth',
+        location: 'Sound Booth',
+      }),
+    });
+
+    const histInsert = insertCalls.find((c) => c.table === 'history_log');
+    expect(histInsert).toBeDefined();
+    const histRows = histInsert?.payload as Array<Record<string, unknown>>;
+    expect(histRows).toHaveLength(1);
+    expect(histRows[0].action).toBe('updated');
+    expect(histRows[0].item_id).toBe('item_a');
+    expect((histRows[0].prev_data as Record<string, unknown>).category_id).toBe('cat-drums');
+    expect((histRows[0].item_data as Record<string, unknown>).category_id).toBe('cat-spares');
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
   });
 });

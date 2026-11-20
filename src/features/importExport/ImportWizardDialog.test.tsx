@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { queryKeys } from '@/lib/queryKeys';
-import type { Category, LocationRecord, UserRole } from '@/types/database';
+import type { Category, EquipmentType, LocationRecord, UserRole } from '@/types/database';
 import { ImportWizardDialog } from './ImportWizardDialog';
 
 const {
@@ -33,6 +33,7 @@ const {
   const failInserts = new Map<string, string>();
   let createdCatCount = 0;
   let createdLocCount = 0;
+  let createdTypeCount = 0;
 
   const from = vi.fn((table: string) => {
     const insertFn = vi.fn((payload: unknown) => {
@@ -71,6 +72,20 @@ const {
                   description: null,
                   sort_order: Number(firstRow.sort_order ?? 100),
                   created_at: '2026-11-18T00:00:00.000Z',
+                },
+                error: null,
+              };
+            }
+            if (table === 'equipment_types') {
+              createdTypeCount += 1;
+              return {
+                data: {
+                  id: `et-new-${createdTypeCount}`,
+                  name: String(firstRow.name ?? 'Equipment Type'),
+                  color: String(firstRow.color ?? '#64748b'),
+                  icon: String(firstRow.icon ?? 'tag'),
+                  sort_order: Number(firstRow.sort_order ?? 100),
+                  created_at: '2026-11-20T00:00:00.000Z',
                 },
                 error: null,
               };
@@ -117,6 +132,7 @@ const {
       failInserts.clear();
       createdCatCount = 0;
       createdLocCount = 0;
+      createdTypeCount = 0;
     },
   };
 });
@@ -299,6 +315,9 @@ describe('ImportWizardDialog', () => {
         checkedBy: 'Dan Caleb',
         qty_on_loan: 0,
         available_qty: 2,
+        equipment_type_id: null,
+        equipment_type: null,
+        min_qty: null,
         activeLoans: [],
       },
     ];
@@ -395,6 +414,9 @@ describe('ImportWizardDialog', () => {
         checkedBy: 'Dan Caleb',
         qty_on_loan: 0,
         available_qty: 2,
+        equipment_type_id: null,
+        equipment_type: null,
+        min_qty: null,
         activeLoans: [],
       },
     ];
@@ -583,6 +605,9 @@ describe('ImportWizardDialog', () => {
         checkedBy: 'Dan Caleb',
         qty_on_loan: 1,
         available_qty: 1,
+        equipment_type_id: null,
+        equipment_type: null,
+        min_qty: null,
         activeLoans: [
           {
             id: 'loan-existing-1',
@@ -620,6 +645,9 @@ describe('ImportWizardDialog', () => {
         checkedBy: 'Dan Caleb',
         qty_on_loan: 2,
         available_qty: 2,
+        equipment_type_id: null,
+        equipment_type: null,
+        min_qty: null,
         activeLoans: [
           {
             id: 'loan-existing-2',
@@ -670,6 +698,9 @@ describe('ImportWizardDialog', () => {
         checkedBy: 'Dan Caleb',
         qty_on_loan: 1,
         available_qty: 2,
+        equipment_type_id: null,
+        equipment_type: null,
+        min_qty: null,
         activeLoans: [
           {
             id: 'loan-existing-4',
@@ -745,5 +776,155 @@ describe('ImportWizardDialog', () => {
     expect(loanRows[0].item_id).toBe('item-di');
     expect(loanRows[0].borrower_name).toBe('Eli Cruz');
     expect(loanRows[0].due_date).toBe('2026-12-01');
+  });
+
+  it('auto-creates missing equipment types, resolves equipment_type_id/text, persists min_qty, and preserves omitted fields on update', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    const queryClient = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    const sampleEquipmentTypes: EquipmentType[] = [
+      {
+        id: 'et-mics',
+        name: 'Microphones',
+        color: '#d3554a',
+        icon: 'mic',
+        sort_order: 90,
+        created_at: '2026-11-20T00:00:00.000Z',
+      },
+    ];
+
+    const existingForUpdate: EnrichedInventoryItem[] = [
+      {
+        id: 'item-existing-et',
+        category: 'Drums',
+        category_id: 'cat-drums',
+        subcategory_id: null,
+        item: 'Shure SM58',
+        brand: 'Shure',
+        qty: 4,
+        condition: 'working',
+        owner: 'Church Property',
+        location: 'Stage',
+        location_id: 'loc-stage',
+        serial: 'SM58-01',
+        description: null,
+        image_filename: null,
+        remarks: 'Existing',
+        dateChecked: 'November 18, 2026',
+        checked_at: '2026-11-18T09:00:00.000Z',
+        checkedBy: 'Dan Caleb',
+        qty_on_loan: 0,
+        available_qty: 4,
+        equipment_type_id: 'et-mics',
+        equipment_type: 'Microphones',
+        min_qty: 2,
+        activeLoans: [],
+      },
+    ];
+
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <ImportWizardDialog
+          open={true}
+          onOpenChange={onOpenChange}
+          items={existingForUpdate}
+          categories={sampleCategories}
+          locations={sampleLocations}
+          equipmentTypes={sampleEquipmentTypes}
+        />
+      </QueryClientProvider>
+    );
+
+    const csvWithTypes = [
+      '"Equipment","Category","Equipment Type","Qty","Min Qty"',
+      '"Radial J48","Drums","DI Boxes & Effects","2","0"',
+      '"Shure Beta 58","Drums","microphones","3","2"',
+      '"Shure SM58","Drums","Microphones","4",""',
+    ].join('\r\n');
+
+    const fileInput = screen.getByLabelText(/select csv or json file/i);
+    fireEvent.change(fileInput, {
+      target: { files: [new File([csvWithTypes], 'types.csv', { type: 'text/csv' })] },
+    });
+
+    expect(await screen.findByText('Radial J48')).toBeInTheDocument();
+    expect(screen.getByText(/\+1 new equipment type/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: /update existing matches/i }));
+    await user.click(screen.getByRole('button', { name: /start import \(3\)/i }));
+
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    const typeInserts = insertCalls.filter((c) => c.table === 'equipment_types');
+    expect(typeInserts).toHaveLength(1);
+    expect((typeInserts[0].payload as Array<Record<string, unknown>>)[0].name).toBe(
+      'DI Boxes & Effects'
+    );
+
+    const invInsert = insertCalls.find((c) => c.table === 'inventory');
+    const insertedRows = invInsert?.payload as Array<Record<string, unknown>>;
+    expect(insertedRows).toHaveLength(2);
+    expect(insertedRows[0]).toEqual(
+      expect.objectContaining({
+        item: 'Radial J48',
+        equipment_type_id: 'et-new-1',
+        equipment_type: 'DI Boxes & Effects',
+        min_qty: 0,
+      })
+    );
+    expect(insertedRows[1]).toEqual(
+      expect.objectContaining({
+        item: 'Shure Beta 58',
+        equipment_type_id: 'et-mics',
+        equipment_type: 'Microphones',
+        min_qty: 2,
+      })
+    );
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].payload).toEqual(
+      expect.objectContaining({
+        equipment_type_id: 'et-mics',
+        equipment_type: 'Microphones',
+        min_qty: null,
+      })
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.equipmentTypes });
+
+    // Partial update CSV omitting Equipment Type and Min Qty must preserve existing values
+    insertCalls.length = 0;
+    updateCalls.length = 0;
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ImportWizardDialog
+          open={true}
+          onOpenChange={onOpenChange}
+          items={existingForUpdate}
+          categories={sampleCategories}
+          locations={sampleLocations}
+          equipmentTypes={sampleEquipmentTypes}
+        />
+      </QueryClientProvider>
+    );
+
+    const partialCsv = '"Equipment","Remarks"\r\n"Shure SM58","Checked again"';
+    fireEvent.change(screen.getByLabelText(/select csv or json file/i), {
+      target: { files: [new File([partialCsv], 'partial.csv', { type: 'text/csv' })] },
+    });
+    expect(await screen.findByText('Shure SM58')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: /update existing matches/i }));
+    await user.click(screen.getByRole('button', { name: /start import \(1\)/i }));
+
+    await waitFor(() => {
+      expect(updateCalls).toHaveLength(1);
+    });
+    expect('equipment_type_id' in updateCalls[0].payload).toBe(false);
+    expect('equipment_type' in updateCalls[0].payload).toBe(false);
+    expect('min_qty' in updateCalls[0].payload).toBe(false);
   });
 });

@@ -119,6 +119,53 @@ describe('itemFormSchema', () => {
     expect(result.errors).toEqual({});
     expect(result.values.qty).toBe(0);
   });
+
+  it('normalizes optional min_qty (blank/null/undefined -> null, 0/"0" -> 0) and rejects invalid values', () => {
+    expect(itemFormSchema.parse({ ...validBase }).min_qty).toBeNull();
+    expect(itemFormSchema.parse({ ...validBase, min_qty: '' }).min_qty).toBeNull();
+    expect(itemFormSchema.parse({ ...validBase, min_qty: '   ' }).min_qty).toBeNull();
+    expect(itemFormSchema.parse({ ...validBase, min_qty: null }).min_qty).toBeNull();
+    expect(itemFormSchema.parse({ ...validBase, min_qty: undefined }).min_qty).toBeNull();
+
+    expect(itemFormSchema.parse({ ...validBase, min_qty: 0 }).min_qty).toBe(0);
+    expect(itemFormSchema.parse({ ...validBase, min_qty: '0' }).min_qty).toBe(0);
+    expect(itemFormSchema.parse({ ...validBase, min_qty: ' 0 ' }).min_qty).toBe(0);
+    expect(itemFormSchema.parse({ ...validBase, min_qty: '5' }).min_qty).toBe(5);
+    expect(itemFormSchema.parse({ ...validBase, min_qty: 12 }).min_qty).toBe(12);
+
+    const invalidMinQtys: unknown[] = [
+      -1,
+      '-1',
+      1.5,
+      '2.5',
+      'abc',
+      true,
+      false,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ];
+    for (const min_qty of invalidMinQtys) {
+      expect(itemFormSchema.safeParse({ ...validBase, min_qty }).success).toBe(false);
+    }
+  });
+
+  it('normalizes equipment_type_id and equipment_type cleanly', () => {
+    const emptyTypes = itemFormSchema.parse({
+      ...validBase,
+      equipment_type_id: '   ',
+      equipment_type: null,
+    });
+    expect(emptyTypes.equipment_type_id).toBeNull();
+    expect(emptyTypes.equipment_type).toBe('');
+
+    const populatedTypes = itemFormSchema.parse({
+      ...validBase,
+      equipment_type_id: '  et-mics  ',
+      equipment_type: '  Microphones  ',
+    });
+    expect(populatedTypes.equipment_type_id).toBe('et-mics');
+    expect(populatedTypes.equipment_type).toBe('Microphones');
+  });
 });
 
 describe('validatePhotoFiles', () => {
