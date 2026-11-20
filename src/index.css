@@ -117,17 +117,17 @@
   --shadow-hover: var(--shadow-hover);
   --shadow-modal: var(--shadow-modal);
 
-  --animate-overlay-in: overlay-in 160ms ease-out forwards;
+  --animate-overlay-in: overlay-in 160ms ease-out;
   --animate-overlay-out: overlay-out 130ms ease-in forwards;
-  --animate-dialog-in: dialog-in 180ms ease-out forwards;
+  --animate-dialog-in: dialog-in 180ms ease-out;
   --animate-dialog-out: dialog-out 140ms ease-in forwards;
-  --animate-sheet-in-right: sheet-in-right 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-sheet-in-right: sheet-in-right 220ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-sheet-out-right: sheet-out-right 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  --animate-sheet-in-left: sheet-in-left 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-sheet-in-left: sheet-in-left 220ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-sheet-out-left: sheet-out-left 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  --animate-sheet-in-top: sheet-in-top 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-sheet-in-top: sheet-in-top 220ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-sheet-out-top: sheet-out-top 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  --animate-sheet-in-bottom: sheet-in-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-sheet-in-bottom: sheet-in-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-sheet-out-bottom: sheet-out-bottom 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
@@ -310,7 +310,8 @@
       background-color 150ms ease-out,
       border-color 150ms ease-out,
       box-shadow 150ms ease-out,
-      transform 150ms ease-out;
+      transform 150ms ease-out,
+      translate 150ms ease-out;
   }
 
   .card-accent-hover:not([data-selected="true"]):hover {
@@ -328,16 +329,25 @@
     transition-duration: 0.01ms !important;
   }
 
+  [data-slot="dialog-overlay"][data-state="open"],
+  [data-slot="dialog-content"][data-state="open"],
+  [data-slot="sheet-overlay"][data-state="open"],
+  [data-slot="sheet-content"][data-state="open"] {
+    animation: none !important;
+  }
+
   .card-accent-hover:hover,
   [class*="hover:-translate-y"]:hover,
   .group:hover [class*="group-hover:translate-x"] {
-    transform: none !important;
+    --tw-translate-x: 0 !important;
+    --tw-translate-y: 0 !important;
     translate: none !important;
   }
 
   [data-slot="button"]:active,
   [class*="active:scale"]:active {
-    transform: none !important;
+    --tw-scale-x: 1 !important;
+    --tw-scale-y: 1 !important;
     scale: none !important;
   }
 }

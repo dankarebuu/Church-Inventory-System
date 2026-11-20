@@ -237,7 +237,7 @@ export function InventoryGrid({
               <span className="h-px flex-1 bg-border" aria-hidden="true" />
               <ChevronDown
                 className={cn(
-                  'size-4 shrink-0 text-muted-foreground transition-transform duration-200',
+                  'size-4 shrink-0 text-muted-foreground transition-[transform,rotate] duration-200',
                   isCollapsed && '-rotate-90'
                 )}
                 aria-hidden="true"

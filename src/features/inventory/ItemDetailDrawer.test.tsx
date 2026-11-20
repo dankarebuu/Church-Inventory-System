@@ -421,4 +421,32 @@ describe('ItemDetailDrawer', () => {
     });
     expect(container).toBeInTheDocument();
   });
+
+  it('opens ZoomLightbox cleanly inside ItemDetailDrawer using entrance/exit sheet classes without trapping fixed overlay', async () => {
+    const user = userEvent.setup();
+    renderDrawer('guest', {
+      item: makeItem({
+        image_filename: '["https://cdn.example.com/p1.jpg"]',
+      }),
+    });
+
+    const drawer = screen.getByRole('dialog');
+    expect(drawer).toHaveAttribute('data-slot', 'sheet-content');
+    expect(drawer).toHaveAttribute('data-state', 'open');
+    expect(drawer.className).toContain('data-[state=open]:animate-sheet-in-right');
+    expect(drawer.className).toContain('data-[state=closed]:animate-sheet-out-right');
+
+    await user.click(within(drawer).getByRole('button', { name: /open full preview of shure sm58/i }));
+    const lightbox = await screen.findByRole('dialog', { name: /shure sm58 lightbox preview/i });
+    expect(lightbox).toHaveClass('fixed', 'inset-0');
+
+    await user.click(within(lightbox).getByRole('button', { name: /zoom in/i }));
+    expect(within(lightbox).getByText('250%')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /shure sm58 lightbox preview/i })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('dialog')).toBe(drawer);
+  });
 });

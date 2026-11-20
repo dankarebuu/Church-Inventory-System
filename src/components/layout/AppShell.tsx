@@ -629,7 +629,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
             >
               <Sun
                 className={cn(
-                  'size-4 transition-[transform,opacity] duration-200 ease-out',
+                  'size-4 transition-[transform,rotate,scale,opacity] duration-200 ease-out',
                   theme === 'dark'
                     ? 'rotate-0 scale-100 opacity-100'
                     : '-rotate-90 scale-75 opacity-0'
@@ -638,7 +638,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
               />
               <Moon
                 className={cn(
-                  'absolute size-4 transition-[transform,opacity] duration-200 ease-out',
+                  'absolute size-4 transition-[transform,rotate,scale,opacity] duration-200 ease-out',
                   theme === 'dark'
                     ? 'rotate-90 scale-75 opacity-0'
                     : 'rotate-0 scale-100 opacity-100'

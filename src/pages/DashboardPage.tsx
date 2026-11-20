@@ -708,7 +708,7 @@ export function DashboardPage() {
                   to={kpi.to}
                   data-testid={kpi.testId}
                   className={cn(
-                    'group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-card-foreground shadow-card transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    'group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-card-foreground shadow-card transition-[background-color,border-color,box-shadow,transform,translate] duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     tone === 'danger' && 'border-red-500/30'
                   )}
                 >
@@ -753,7 +753,7 @@ export function DashboardPage() {
             to="/inventory?stock=low"
             data-testid="dashboard-low-stock"
             className={cn(
-              'group flex flex-col justify-between gap-4 rounded-xl border p-4 shadow-card transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-0.5 sm:flex-row sm:items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'group flex flex-col justify-between gap-4 rounded-xl border p-4 shadow-card transition-[background-color,border-color,box-shadow,transform,translate] duration-150 ease-out hover:-translate-y-0.5 sm:flex-row sm:items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               lowStockItems.length > 0
                 ? 'border-amber-500/40 bg-amber-500/[0.06] hover:border-amber-500/60 hover:shadow-hover'
                 : 'border-border bg-card hover:border-primary/40 hover:shadow-hover'
@@ -814,7 +814,7 @@ export function DashboardPage() {
             <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs font-medium text-primary group-hover:underline">
               <span>{lowStockItems.length > 0 ? 'Review Low Stock' : 'Filter Low Stock'}</span>
               <ArrowRight
-                className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                 aria-hidden="true"
               />
             </span>
@@ -853,7 +853,7 @@ export function DashboardPage() {
                 >
                   <span>View All</span>
                   <ArrowRight
-                    className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                    className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                     aria-hidden="true"
                   />
                 </Link>
@@ -924,7 +924,7 @@ export function DashboardPage() {
                       >
                         <span>View all {flaggedItems.length} flagged items</span>
                         <ArrowRight
-                          className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                          className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                           aria-hidden="true"
                         />
                       </Link>
@@ -997,7 +997,7 @@ export function DashboardPage() {
                   >
                     <span>{healthGroupBy === 'type' ? 'Types' : 'Categories'}</span>
                     <ArrowRight
-                      className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                      className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                       aria-hidden="true"
                     />
                   </Link>
@@ -1146,7 +1146,7 @@ export function DashboardPage() {
                   >
                     <span>Manage Loans</span>
                     <ArrowRight
-                      className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                      className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                       aria-hidden="true"
                     />
                   </Link>
@@ -1229,7 +1229,7 @@ export function DashboardPage() {
                         >
                           <span>View all {sortedActiveLoans.length} active loans</span>
                           <ArrowRight
-                            className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                            className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                             aria-hidden="true"
                           />
                         </Link>
@@ -1265,7 +1265,7 @@ export function DashboardPage() {
                   >
                     <span>View Full Log</span>
                     <ArrowRight
-                      className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                      className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                       aria-hidden="true"
                     />
                   </Link>

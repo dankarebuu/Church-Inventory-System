@@ -516,7 +516,7 @@ export function CategoriesPage() {
                           >
                             <span>Browse</span>
                             <ArrowRight
-                              className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                              className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                               aria-hidden="true"
                             />
                           </Link>
@@ -706,7 +706,7 @@ export function CategoriesPage() {
                             >
                               <span>Browse</span>
                               <ArrowRight
-                                className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                                className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                                 aria-hidden="true"
                               />
                             </Link>
@@ -837,7 +837,7 @@ export function CategoriesPage() {
                           >
                             <span>Browse</span>
                             <ArrowRight
-                              className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                              className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                               aria-hidden="true"
                             />
                           </Link>
