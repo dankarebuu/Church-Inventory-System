@@ -10,7 +10,6 @@ import {
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
 import {
   clearAllOfflineCaches,
   clearOfflineCache,
@@ -288,18 +287,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const previousUserId = userRef.current?.id ?? latestAuthUserRef.current?.id ?? null;
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast.error(error.message);
-      return;
+    const purgeOfflineState = () => {
+      if (previousUserId) {
+        clearOfflineCache(previousUserId);
+      }
+      clearAllOfflineCaches();
+      setActiveOfflineCacheUserId(null);
+    };
+
+    // Purge cached catalog data and scope immediately so sign-out never leaves cached data behind
+    // even if remote revocation is slow, errors, or the device is offline.
+    purgeOfflineState();
+
+    let remoteFailed = false;
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        remoteFailed = true;
+      }
+    } catch {
+      remoteFailed = true;
     }
 
-    if (previousUserId) {
-      clearOfflineCache(previousUserId);
+    if (remoteFailed) {
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch {
+        // Offline or storage edge cases must never trap a user in a signed-in session.
+      }
     }
-    clearAllOfflineCaches();
-    setActiveOfflineCacheUserId(null);
 
+    purgeOfflineState();
     pendingRecoveryRef.current = false;
     latestAuthUserRef.current = null;
     ++requestSeqRef.current;

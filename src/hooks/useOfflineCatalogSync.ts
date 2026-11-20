@@ -104,7 +104,14 @@ export function useOfflineCatalogSync({
       isHydratingRef.current = true;
       try {
         const hydrateSlice = <T,>(queryKey: readonly unknown[], sliceData: T[]) => {
-          if (queryClient.getQueryData(queryKey) !== undefined) return;
+          const existingQuery = queryClient.getQueryCache().find({ queryKey, exact: true });
+          if (existingQuery && existingQuery.state.data !== undefined) {
+            hydratedKeysRef.current.set(
+              JSON.stringify(queryKey),
+              existingQuery.state.dataUpdatedAt
+            );
+            return;
+          }
           hydratedKeysRef.current.set(JSON.stringify(queryKey), updatedAt);
           queryClient.setQueryData(queryKey, sliceData, { updatedAt });
         };

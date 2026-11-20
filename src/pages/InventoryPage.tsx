@@ -1363,6 +1363,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             categories={categories}
             locations={locations}
             equipmentTypes={equipmentTypes}
+            isOffline={isOffline}
           />
 
           <BulkAssignDialog
@@ -1383,6 +1384,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             categories={categories}
             locations={locations}
             equipmentTypes={equipmentTypes}
+            isOffline={isOffline}
           />
         </>
       )}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -20,6 +21,7 @@ export interface LocationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   location?: LocationRecord | null;
+  isOffline?: boolean;
 }
 
 /**
@@ -30,6 +32,7 @@ export function LocationDialog({
   open,
   onOpenChange,
   location = null,
+  isOffline = false,
 }: LocationDialogProps) {
   const { createLocation, updateLocation, isSaving } = useLocationMutations();
 
@@ -66,6 +69,7 @@ export function LocationDialog({
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isOffline) return;
     setSubmitError(null);
 
     const trimmedName = name.trim();
@@ -115,6 +119,10 @@ export function LocationDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {isOffline && (
+          <OfflineNotice message="You are offline. Storage location changes cannot be saved until connection returns." />
+        )}
+
         {submitError && (
           <div
             role="alert"
@@ -158,7 +166,7 @@ export function LocationDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSaving}>
+            <Button type="submit" disabled={isSaving || isOffline}>
               {isSaving && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               <span>{isEditing ? 'Save Changes' : 'Create Location'}</span>
             </Button>

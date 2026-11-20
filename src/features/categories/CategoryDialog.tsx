@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -39,6 +40,7 @@ export interface CategoryDialogProps {
   category?: Category | null;
   defaultParentId?: string | null;
   categories: readonly Category[];
+  isOffline?: boolean;
 }
 
 const NONE_PARENT = '__none__';
@@ -85,6 +87,7 @@ export function CategoryDialog({
   category = null,
   defaultParentId = null,
   categories,
+  isOffline = false,
 }: CategoryDialogProps) {
   const { createCategory, updateCategory, isSaving } = useCategoryMutations();
 
@@ -170,6 +173,7 @@ export function CategoryDialog({
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isOffline) return;
     setSubmitError(null);
 
     const trimmedName = name.trim();
@@ -231,6 +235,10 @@ export function CategoryDialog({
               : 'Organize band equipment into top-level categories and nested subcategories.'}
           </DialogDescription>
         </DialogHeader>
+
+        {isOffline && (
+          <OfflineNotice message="You are offline. Category changes cannot be saved until connection returns." />
+        )}
 
         {submitError && (
           <div
@@ -388,7 +396,7 @@ export function CategoryDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSaving}>
+            <Button type="submit" disabled={isSaving || isOffline}>
               {isSaving && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               <span>{submitLabel}</span>
             </Button>

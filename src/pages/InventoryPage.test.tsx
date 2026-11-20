@@ -924,4 +924,69 @@ describe('InventoryPage', () => {
       onLineSpy.mockRestore();
     }
   });
+
+  it('disables submit/import and shows an offline notice inside open ItemFormDialog and ImportWizardDialog when dropping offline', async () => {
+    const user = userEvent.setup();
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+
+    try {
+      renderInventoryPage('admin');
+
+      // 1. Open ItemFormDialog while online -> drop offline
+      await user.click(screen.getByRole('button', { name: /add item/i }));
+      const itemDialog = await screen.findByRole('dialog', { name: /add equipment item/i });
+      const addEquipmentBtn = within(itemDialog).getByRole('button', { name: /add equipment/i });
+      expect(addEquipmentBtn).toBeEnabled();
+
+      act(() => {
+        onLineSpy.mockReturnValue(false);
+        window.dispatchEvent(new Event('offline'));
+      });
+
+      expect(
+        await within(itemDialog).findByText(
+          /You are offline\. Item changes cannot be saved until connection returns\./i
+        )
+      ).toBeInTheDocument();
+      expect(addEquipmentBtn).toBeDisabled();
+
+      await user.click(within(itemDialog).getByRole('button', { name: /cancel/i }));
+
+      // Restore online and open ImportWizardDialog -> drop offline
+      act(() => {
+        onLineSpy.mockReturnValue(true);
+        window.dispatchEvent(new Event('online'));
+      });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^import$/i })).toBeEnabled();
+      });
+
+      await user.click(screen.getByRole('button', { name: /^import$/i }));
+      const importDialog = await screen.findByRole('dialog', { name: /import equipment/i });
+      const fileInput = importDialog.querySelector('input[type="file"]') as HTMLInputElement;
+      const csvFile = new File(['Item,Category,Qty\nShure Beta 58,Vocals,2'], 'band.csv', {
+        type: 'text/csv',
+      });
+      await user.upload(fileInput, csvFile);
+
+      const startImportBtn = await within(importDialog).findByRole('button', {
+        name: /start import/i,
+      });
+      expect(startImportBtn).toBeEnabled();
+
+      act(() => {
+        onLineSpy.mockReturnValue(false);
+        window.dispatchEvent(new Event('offline'));
+      });
+
+      expect(
+        await within(importDialog).findByText(
+          /You are offline\. Equipment imports cannot run until connection returns\./i
+        )
+      ).toBeInTheDocument();
+      expect(startImportBtn).toBeDisabled();
+    } finally {
+      onLineSpy.mockRestore();
+    }
+  });
 });

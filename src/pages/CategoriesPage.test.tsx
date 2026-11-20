@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -849,6 +849,86 @@ describe('CategoriesPage', () => {
       expect(screen.getByRole('button', { name: /add equipment type/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /edit instruments/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /delete instruments/i })).toBeDisabled();
+    } finally {
+      onLineSpy.mockRestore();
+    }
+  });
+
+  it('disables submit and displays offline notice inside open CategoryDialog, LocationDialog, and EquipmentTypeDialog when dropping offline', async () => {
+    const user = userEvent.setup();
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+
+    try {
+      renderCategoriesPage('admin');
+
+      // 1. CategoryDialog
+      await user.click(screen.getByRole('button', { name: /add category/i }));
+      const categoryDialog = await screen.findByRole('dialog');
+      const saveCategoryBtn = within(categoryDialog).getByRole('button', {
+        name: /create category/i,
+      });
+      expect(saveCategoryBtn).toBeEnabled();
+
+      act(() => {
+        onLineSpy.mockReturnValue(false);
+        window.dispatchEvent(new Event('offline'));
+      });
+      expect(
+        await within(categoryDialog).findByText(
+          /You are offline\. Category changes cannot be saved until connection returns\./i
+        )
+      ).toBeInTheDocument();
+      expect(saveCategoryBtn).toBeDisabled();
+      await user.click(within(categoryDialog).getByRole('button', { name: /cancel/i }));
+
+      // 2. LocationDialog
+      act(() => {
+        onLineSpy.mockReturnValue(true);
+        window.dispatchEvent(new Event('online'));
+      });
+      await user.click(screen.getByRole('tab', { name: /storage locations/i }));
+      await user.click(await screen.findByRole('button', { name: /add location/i }));
+      const locationDialog = await screen.findByRole('dialog');
+      const saveLocationBtn = within(locationDialog).getByRole('button', {
+        name: /create location/i,
+      });
+      expect(saveLocationBtn).toBeEnabled();
+
+      act(() => {
+        onLineSpy.mockReturnValue(false);
+        window.dispatchEvent(new Event('offline'));
+      });
+      expect(
+        await within(locationDialog).findByText(
+          /You are offline\. Storage location changes cannot be saved until connection returns\./i
+        )
+      ).toBeInTheDocument();
+      expect(saveLocationBtn).toBeDisabled();
+      await user.click(within(locationDialog).getByRole('button', { name: /cancel/i }));
+
+      // 3. EquipmentTypeDialog
+      act(() => {
+        onLineSpy.mockReturnValue(true);
+        window.dispatchEvent(new Event('online'));
+      });
+      await user.click(screen.getByRole('tab', { name: /equipment types/i }));
+      await user.click(await screen.findByRole('button', { name: /add equipment type/i }));
+      const typeDialog = await screen.findByRole('dialog');
+      const saveTypeBtn = within(typeDialog).getByRole('button', {
+        name: /create equipment type/i,
+      });
+      expect(saveTypeBtn).toBeEnabled();
+
+      act(() => {
+        onLineSpy.mockReturnValue(false);
+        window.dispatchEvent(new Event('offline'));
+      });
+      expect(
+        await within(typeDialog).findByText(
+          /You are offline\. Equipment type changes cannot be saved until connection returns\./i
+        )
+      ).toBeInTheDocument();
+      expect(saveTypeBtn).toBeDisabled();
     } finally {
       onLineSpy.mockRestore();
     }

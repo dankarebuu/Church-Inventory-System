@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -29,6 +30,7 @@ export interface EquipmentTypeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   equipmentType?: EquipmentType | null;
+  isOffline?: boolean;
 }
 
 /**
@@ -39,6 +41,7 @@ export function EquipmentTypeDialog({
   open,
   onOpenChange,
   equipmentType = null,
+  isOffline = false,
 }: EquipmentTypeDialogProps) {
   const { createEquipmentType, updateEquipmentType, isSaving } =
     useEquipmentTypeMutations();
@@ -88,6 +91,7 @@ export function EquipmentTypeDialog({
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isOffline) return;
     setSubmitError(null);
 
     const trimmedName = name.trim();
@@ -160,6 +164,10 @@ export function EquipmentTypeDialog({
               : 'Classify gear by functional hardware type (e.g. Microphones, Cables & Cords, Instruments).'}
           </DialogDescription>
         </DialogHeader>
+
+        {isOffline && (
+          <OfflineNotice message="You are offline. Equipment type changes cannot be saved until connection returns." />
+        )}
 
         {submitError && (
           <div
@@ -309,7 +317,7 @@ export function EquipmentTypeDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSaving}>
+            <Button type="submit" disabled={isSaving || isOffline}>
               {isSaving && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               <span>{isEditing ? 'Save Changes' : 'Create Equipment Type'}</span>
             </Button>

@@ -9,6 +9,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -70,6 +71,7 @@ export interface ImportWizardDialogProps {
   categories: readonly Category[];
   locations: readonly LocationRecord[];
   equipmentTypes?: readonly EquipmentType[];
+  isOffline?: boolean;
 }
 
 const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
@@ -229,6 +231,7 @@ export function ImportWizardDialog({
   categories,
   locations,
   equipmentTypes,
+  isOffline = false,
 }: ImportWizardDialogProps) {
   const { role, user, profile } = useAuth();
   const queryClient = useQueryClient();
@@ -400,6 +403,10 @@ export function ImportWizardDialog({
   }, [categories, importMode, items, locations, parsedRows, resolvedEquipmentTypes]);
 
   const handleStartImport = async () => {
+    if (isOffline) {
+      setParseError('You are offline. Equipment imports cannot run until connection returns.');
+      return;
+    }
     if (!isSupabaseConfigured) {
       setParseError('Supabase is not configured.');
       return;
@@ -1049,6 +1056,10 @@ export function ImportWizardDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {isOffline && (
+          <OfflineNotice message="You are offline. Equipment imports cannot run until connection returns." />
+        )}
+
         <div className="space-y-5">
           {/* File Picker */}
           <div className="space-y-2 rounded-xl border border-dashed border-border bg-secondary/40 p-4">
@@ -1298,7 +1309,7 @@ export function ImportWizardDialog({
           </Button>
           <Button
             type="button"
-            disabled={isImporting || parsedRows.length === 0}
+            disabled={isOffline || isImporting || parsedRows.length === 0}
             onClick={() => void handleStartImport()}
           >
             {isImporting ? (

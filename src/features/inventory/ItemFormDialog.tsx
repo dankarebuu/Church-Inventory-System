@@ -3,6 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertCircle, ImagePlus, Loader2, X } from 'lucide-react';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -49,6 +50,7 @@ export interface ItemFormDialogProps {
   equipmentTypes?: readonly EquipmentType[];
   onSave?: (input: SaveItemInput) => Promise<unknown>;
   isSaving?: boolean;
+  isOffline?: boolean;
 }
 
 interface PendingPhoto {
@@ -141,6 +143,7 @@ export function ItemFormDialog({
   equipmentTypes = EMPTY_EQUIPMENT_TYPES,
   onSave,
   isSaving: externalIsSaving,
+  isOffline = false,
 }: ItemFormDialogProps) {
   const { saveItem: hookSaveItem, isSaving: hookIsSaving } = useItemMutations();
   const isSubmittingSave = externalIsSaving ?? hookIsSaving;
@@ -365,6 +368,7 @@ export function ItemFormDialog({
   };
 
   const onValidSubmit = async (values: ItemFormValues) => {
+    if (isOffline) return;
     setSubmitError(null);
 
     const matchedCat = values.category_id
@@ -431,6 +435,10 @@ export function ItemFormDialog({
               : 'Log a new equipment item into the WINGMACC band inventory.'}
           </DialogDescription>
         </DialogHeader>
+
+        {isOffline && (
+          <OfflineNotice message="You are offline. Item changes cannot be saved until connection returns." />
+        )}
 
         {submitError && (
           <div
@@ -769,7 +777,7 @@ export function ItemFormDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || isOffline}>
               {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               <span>{item ? 'Save Changes' : 'Add Equipment'}</span>
             </Button>

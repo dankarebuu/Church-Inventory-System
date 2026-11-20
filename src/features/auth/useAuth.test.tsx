@@ -640,4 +640,101 @@ describe('useAuth / AuthProvider', () => {
     expect(localStorage.getItem(getOfflineCacheKey('guest'))).toBeNull();
     expect(localStorage.getItem('wingmacc_theme')).toBe('dark');
   });
+
+  it('purges offline caches immediately and falls back to local sign-out when supabase.auth.signOut returns an error', async () => {
+    const user = userEvent.setup();
+    const adminUser = makeUser({ id: 'admin-err', email: 'err@wingmacc.org' });
+    const adminProfile: ProfileRecord = {
+      id: 'admin-err',
+      email: 'err@wingmacc.org',
+      first_name: 'Err',
+      last_name: 'Admin',
+      role: 'admin',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    saveOfflineSnapshot('admin-err', { inventory: [], categories: [] });
+    saveOfflineSnapshot('guest', { inventory: [], categories: [] });
+
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(adminUser) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({ data: adminProfile, error: null });
+
+    let resolveRemoteSignOut: ((value: { error: { message: string } }) => void) | undefined;
+    mockSignOut
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveRemoteSignOut = resolve;
+          })
+      )
+      .mockResolvedValueOnce({ error: null });
+
+    renderWithAuth(['/dashboard']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('admin');
+    });
+    expect(loadOfflineSnapshot('admin-err')).not.toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Sign Out' }));
+
+    // Cache MUST be purged synchronously before remote signOut resolves.
+    expect(getActiveOfflineCacheUserId()).toBeNull();
+    expect(localStorage.getItem(getOfflineCacheKey('admin-err'))).toBeNull();
+    expect(localStorage.getItem(getOfflineCacheKey('guest'))).toBeNull();
+
+    await act(async () => {
+      resolveRemoteSignOut?.({ error: { message: 'Network request failed' } });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('guest');
+    });
+    expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    expect(mockSignOut).toHaveBeenNthCalledWith(1);
+    expect(mockSignOut).toHaveBeenNthCalledWith(2, { scope: 'local' });
+  });
+
+  it('clears session state and offline caches even when offline signOut and local fallback reject', async () => {
+    const user = userEvent.setup();
+    const memberUser = makeUser({ id: 'member-offline', email: 'member@wingmacc.org' });
+    const memberProfile: ProfileRecord = {
+      id: 'member-offline',
+      email: 'member@wingmacc.org',
+      first_name: 'Offline',
+      last_name: 'Member',
+      role: 'member',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    saveOfflineSnapshot('member-offline', { inventory: [], categories: [] });
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(memberUser) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({ data: memberProfile, error: null });
+
+    mockSignOut
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new Error('Storage unavailable'));
+
+    renderWithAuth(['/dashboard']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-email')).toHaveTextContent('member@wingmacc.org');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Sign Out' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('guest');
+    });
+    expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    expect(getActiveOfflineCacheUserId()).toBeNull();
+    expect(localStorage.getItem(getOfflineCacheKey('member-offline'))).toBeNull();
+    expect(mockSignOut).toHaveBeenNthCalledWith(2, { scope: 'local' });
+  });
 });

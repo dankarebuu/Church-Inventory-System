@@ -888,6 +888,7 @@ export function CategoriesPage() {
             category={editingCategory}
             defaultParentId={defaultParentId}
             categories={categories}
+            isOffline={isOffline}
           />
 
           <LocationDialog
@@ -899,6 +900,7 @@ export function CategoriesPage() {
               }
             }}
             location={editingLocation}
+            isOffline={isOffline}
           />
 
           <EquipmentTypeDialog
@@ -910,6 +912,7 @@ export function CategoriesPage() {
               }
             }}
             equipmentType={editingEquipmentType}
+            isOffline={isOffline}
           />
 
           {/* Delete Category / Subcategory Confirmation */}

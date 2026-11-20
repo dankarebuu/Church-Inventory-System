@@ -1,5 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render } from '@testing-library/react';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import {
@@ -191,5 +191,73 @@ describe('useOfflineCatalogSync', () => {
     expect(queryClient.getQueryData(queryKeys.inventory('member'))).toBeUndefined();
     expect(queryClient.getQueryData(queryKeys.inventory('guest'))).toBeUndefined();
     expect(queryClient.getQueryData(queryKeys.categories)).toBeUndefined();
+  });
+
+  it('does not overwrite snapshot savedAt on offline-to-online reconnect when cold offline boot seeded initialData synchronously', async () => {
+    const staleSavedAt = '2026-11-19T12:00:00.000Z';
+    const staleStamp = Date.parse(staleSavedAt);
+    saveOfflineSnapshot(null, {
+      inventory: [makeItem('g-1', 'Offline Guest Mic')],
+      categories: [sampleCategory],
+      equipment_types: [sampleType],
+      locations: [sampleLocation],
+      savedAt: staleSavedAt,
+    });
+
+    let resolveLiveFetch: ((items: EnrichedInventoryItem[]) => void) | undefined;
+
+    function ColdOfflineCatalogProbe({ isOnline }: { isOnline: boolean }) {
+      useOfflineCatalogSync({
+        userId: null,
+        role: 'guest',
+        isAuthLoading: false,
+        isOnline,
+      });
+
+      useQuery({
+        queryKey: queryKeys.inventory('guest'),
+        enabled: isOnline,
+        queryFn: () =>
+          new Promise<EnrichedInventoryItem[]>((resolve) => {
+            resolveLiveFetch = resolve;
+          }),
+        initialData: () => loadOfflineSnapshot(null)?.inventory,
+        initialDataUpdatedAt: () => staleStamp,
+      });
+
+      return null;
+    }
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <ColdOfflineCatalogProbe isOnline={false} />
+      </QueryClientProvider>
+    );
+
+    expect(loadOfflineSnapshot(null)?.savedAt).toBe(staleSavedAt);
+
+    // Reconnect while live network refetch is still pending: savedAt must NOT jump to `now`.
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ColdOfflineCatalogProbe isOnline={true} />
+      </QueryClientProvider>
+    );
+
+    expect(loadOfflineSnapshot(null)?.savedAt).toBe(staleSavedAt);
+
+    await act(async () => {
+      resolveLiveFetch?.([makeItem('g-2', 'Fresh Online Mic')]);
+    });
+
+    await waitFor(() => {
+      expect(loadOfflineSnapshot(null)?.inventory.map((i) => i.item)).toEqual([
+        'Fresh Online Mic',
+      ]);
+    });
+    expect(loadOfflineSnapshot(null)?.savedAt).not.toBe(staleSavedAt);
   });
 });
