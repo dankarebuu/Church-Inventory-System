@@ -250,4 +250,17 @@ describe('ActivityPage', () => {
     expect(within(nullCard).getByText('Mystery Cable')).toBeInTheDocument();
     expect(within(nullCard).getByText('Recorded activity action')).toBeInTheDocument();
   });
+
+  it('disables Admin Restore and Undo actions with offline notice when offline', () => {
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      renderActivityPage('admin');
+
+      expect(screen.getByText(/Offline — Undo and Restore actions are disabled/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^restore$/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /^undo$/i })).toBeDisabled();
+    } finally {
+      onLineSpy.mockRestore();
+    }
+  });
 });

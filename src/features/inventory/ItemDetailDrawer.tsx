@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -208,6 +209,10 @@ export function ItemDetailDrawer({
         </SheetHeader>
 
         <div className="flex-1 space-y-6 p-6">
+          {isOffline && canCheck && (
+            <OfflineNotice message="Offline read-only mode — condition checks, photos, loans, and edits are paused until connection returns." />
+          )}
+
           {/* Multi-photo Carousel */}
           <div className="space-y-2.5">
             {currentPhoto ? (
@@ -348,7 +353,7 @@ export function ItemDetailDrawer({
               <QuickCheckButtons
                 item={item}
                 onQuickCheck={onQuickCheck}
-                disabled={isChecking}
+                disabled={isChecking || isOffline}
                 layout="grid"
               />
             </div>
@@ -452,7 +457,7 @@ export function ItemDetailDrawer({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={item.available_qty <= 0}
+                  disabled={item.available_qty <= 0 || isOffline}
                   onClick={() => onCheckout?.(item)}
                 >
                   <ArrowLeftRight className="size-3.5" aria-hidden="true" />
@@ -481,8 +486,9 @@ export function ItemDetailDrawer({
               </div>
             ) : activeLoans.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-secondary/25 p-4 text-sm text-muted-foreground">
-                No active loans for this item. {item.available_qty} of {item.qty} available to
-                check out.
+                {item.qty_on_loan > 0
+                  ? `${item.qty_on_loan} ${item.qty_on_loan === 1 ? 'unit is' : 'units are'} currently on loan (${item.available_qty} of ${item.qty} available). Borrower details require a live connection.`
+                  : `No active loans for this item. ${item.available_qty} of ${item.qty} available to check out.`}
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -520,7 +526,7 @@ export function ItemDetailDrawer({
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={isReturningThisLoan}
+                            disabled={isReturningThisLoan || isOffline}
                             onClick={() => onReturnLoan(loan, item)}
                           >
                             {isReturningThisLoan ? (
@@ -561,6 +567,7 @@ export function ItemDetailDrawer({
             <Button
               type="button"
               variant="outline"
+              disabled={isOffline}
               onClick={() => onEdit?.(item)}
             >
               <Edit2 className="size-4" aria-hidden="true" />
@@ -569,6 +576,7 @@ export function ItemDetailDrawer({
             <Button
               type="button"
               variant="destructive"
+              disabled={isOffline}
               onClick={() => onDelete?.(item)}
             >
               <Trash2 className="size-4" aria-hidden="true" />

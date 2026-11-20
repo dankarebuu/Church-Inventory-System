@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/useAuth';
+import {
+  getActiveOfflineCacheUserId,
+  getOfflineInitialSlice,
+  isOfflineNetworkError,
+  loadOfflineSnapshot,
+} from '@/lib/offlineCache';
 import { queryKeys } from '@/lib/queryKeys';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { isUniqueConstraintError, trimOrNull } from '@/lib/utils';
@@ -113,11 +119,33 @@ async function fetchCategories(): Promise<Category[]> {
  * Fetches flat 2-level equipment categories sorted by `sort_order`, then `name`.
  */
 export function useCategories() {
+  const cacheOwnerId = getActiveOfflineCacheUserId();
+  const offlineInitial = isSupabaseConfigured
+    ? getOfflineInitialSlice('categories', cacheOwnerId)
+    : null;
+
   return useQuery<Category[], Error>({
     queryKey: queryKeys.categories,
-    queryFn: fetchCategories,
+    queryFn: async () => {
+      try {
+        return await fetchCategories();
+      } catch (err) {
+        if (isOfflineNetworkError(err)) {
+          const fallback = loadOfflineSnapshot(getActiveOfflineCacheUserId());
+          if (fallback) {
+            return fallback.categories;
+          }
+        }
+        throw err;
+      }
+    },
     enabled: isSupabaseConfigured,
-    initialData: isSupabaseConfigured ? undefined : EMPTY_CATEGORIES,
+    initialData: !isSupabaseConfigured
+      ? EMPTY_CATEGORIES
+      : offlineInitial
+        ? offlineInitial.data
+        : undefined,
+    initialDataUpdatedAt: offlineInitial ? offlineInitial.updatedAt : undefined,
   });
 }
 

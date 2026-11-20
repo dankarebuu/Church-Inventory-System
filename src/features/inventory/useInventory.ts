@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/useAuth';
+import {
+  getActiveOfflineCacheUserId,
+  getOfflineInitialSlice,
+  isOfflineNetworkError,
+  loadOfflineSnapshot,
+} from '@/lib/offlineCache';
 import { queryKeys } from '@/lib/queryKeys';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import {
@@ -345,11 +351,35 @@ export const GUEST_INVENTORY_REFETCH_INTERVAL_MS = 60_000;
  * `inventory` Realtime updates after the Phase 2 RLS lockdown.
  */
 export function useInventoryItems(role: UserRole) {
+  const cacheOwnerId = role === 'guest' ? null : getActiveOfflineCacheUserId();
+  const canUseOfflineSnapshot = role === 'guest' || cacheOwnerId !== null;
+  const offlineInitial =
+    isSupabaseConfigured && canUseOfflineSnapshot
+      ? getOfflineInitialSlice('inventory', cacheOwnerId)
+      : null;
+
   return useQuery<EnrichedInventoryItem[], Error>({
     queryKey: queryKeys.inventory(role),
-    queryFn: () => fetchInventoryItems(role),
+    queryFn: async () => {
+      try {
+        return await fetchInventoryItems(role);
+      } catch (err) {
+        if (canUseOfflineSnapshot && isOfflineNetworkError(err)) {
+          const fallback = loadOfflineSnapshot(cacheOwnerId);
+          if (fallback) {
+            return fallback.inventory;
+          }
+        }
+        throw err;
+      }
+    },
     enabled: isSupabaseConfigured,
-    initialData: isSupabaseConfigured ? undefined : EMPTY_INVENTORY,
+    initialData: !isSupabaseConfigured
+      ? EMPTY_INVENTORY
+      : offlineInitial
+        ? offlineInitial.data
+        : undefined,
+    initialDataUpdatedAt: offlineInitial ? offlineInitial.updatedAt : undefined,
     refetchOnWindowFocus: role === 'guest',
     refetchInterval: role === 'guest' ? GUEST_INVENTORY_REFETCH_INTERVAL_MS : false,
   });

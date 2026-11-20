@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -81,6 +82,7 @@ import {
 import { CheckoutDialog } from '@/features/loans/CheckoutDialog';
 import { useLoanMutations } from '@/features/loans/useLoans';
 import { sortLocations, useLocations } from '@/features/locations/useLocations';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { parseImages, trimOrNull } from '@/lib/utils';
 import type {
@@ -230,24 +232,10 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
   const [returningLoanId, setReturningLoanId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [isExportingJson, setIsExportingJson] = useState(false);
-  const [isOffline, setIsOffline] = useState(() =>
-    typeof navigator !== 'undefined' ? navigator.onLine === false : false
-  );
+  const { isOffline } = useOnlineStatus();
 
   const canCheck = role === 'member' || role === 'admin';
   const canAdmin = role === 'admin';
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleOffline = () => setIsOffline(true);
-    const handleOnline = () => setIsOffline(false);
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('online', handleOnline);
-    return () => {
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('online', handleOnline);
-    };
-  }, []);
 
   useEffect(() => {
     if (!canAdmin) {
@@ -710,7 +698,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
 
   const handleQuickCheck = useCallback(
     async (item: EnrichedInventoryItem, condition: ItemCondition) => {
-      if (!canCheck) return;
+      if (!canCheck || isOffline) return;
       try {
         await memberCheckItem({
           itemId: item.id,
@@ -723,12 +711,12 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         toast.error(message);
       }
     },
-    [canCheck, memberCheckItem]
+    [canCheck, isOffline, memberCheckItem]
   );
 
   const handleAddDrawerPhoto = useCallback(
     async (item: EnrichedInventoryItem, file: File) => {
-      if (!canCheck) return;
+      if (!canCheck || isOffline) return;
       const existingCount = parseImages(item.image_filename).length;
       try {
         await addItemPhoto({
@@ -744,36 +732,36 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         throw err;
       }
     },
-    [addItemPhoto, canCheck]
+    [addItemPhoto, canCheck, isOffline]
   );
 
   const handleOpenAdd = () => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setEditingItem(null);
     setFormOpen(true);
   };
 
   const handleOpenEdit = useCallback(
     (item: EnrichedInventoryItem) => {
-      if (!canAdmin) return;
+      if (!canAdmin || isOffline) return;
       setEditingItem(item);
       setFormOpen(true);
     },
-    [canAdmin]
+    [canAdmin, isOffline]
   );
 
   const handleOpenCheckout = useCallback(
     (item: EnrichedInventoryItem) => {
-      if (!canCheck) return;
+      if (!canCheck || isOffline) return;
       setCheckoutItemTarget(item);
       setCheckoutOpen(true);
     },
-    [canCheck]
+    [canCheck, isOffline]
   );
 
   const handleReturnLoan = useCallback(
     async (loan: LoanRecord, item: EnrichedInventoryItem) => {
-      if (!canCheck) return;
+      if (!canCheck || isOffline) return;
       setReturningLoanId(loan.id);
       try {
         await returnLoan({ loan, itemName: item.item });
@@ -788,11 +776,11 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         setReturningLoanId(null);
       }
     },
-    [canCheck, returnLoan]
+    [canCheck, isOffline, returnLoan]
   );
 
   const handleConfirmDelete = async () => {
-    if (!pendingDeleteItem || !canAdmin) return;
+    if (!pendingDeleteItem || !canAdmin || isOffline) return;
     const target = pendingDeleteItem;
     try {
       await softDeleteItem(target);
@@ -818,7 +806,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
   };
 
   const handleExportJson = async () => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setIsExportingJson(true);
     try {
       let historyEntries: HistoryEntry[] = [];
@@ -926,7 +914,10 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
                   <FileSpreadsheet className="size-4" aria-hidden="true" />
                   <span>Export CSV</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void handleExportJson()}>
+                <DropdownMenuItem
+                  disabled={isOffline || isExportingJson}
+                  onSelect={() => void handleExportJson()}
+                >
                   <FileJson className="size-4" aria-hidden="true" />
                   <span>Export JSON Backup</span>
                 </DropdownMenuItem>
@@ -940,20 +931,29 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           )}
 
           {canAdmin && (
-            <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isOffline}
+              onClick={() => !isOffline && setImportOpen(true)}
+            >
               <Upload className="size-4" aria-hidden="true" />
               <span>Import</span>
             </Button>
           )}
 
           {canAdmin && (
-            <Button type="button" onClick={handleOpenAdd}>
+            <Button type="button" disabled={isOffline} onClick={handleOpenAdd}>
               <Plus className="size-4" aria-hidden="true" />
               <span>Add Item</span>
             </Button>
           )}
         </div>
       </div>
+
+      {isOffline && canCheck && (
+        <OfflineNotice message="Offline — edits, condition checks, imports, and bulk updates are disabled until connection returns." />
+      )}
 
       {/* Multi-facet Filter Bar */}
       <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-card">
@@ -1230,7 +1230,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             </Button>
           ) : (
             canAdmin && (
-              <Button type="button" onClick={handleOpenAdd}>
+              <Button type="button" disabled={isOffline} onClick={handleOpenAdd}>
                 <Plus className="size-4" aria-hidden="true" />
                 <span>Add Item</span>
               </Button>
@@ -1254,6 +1254,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           onEdit={handleOpenEdit}
           onDelete={setPendingDeleteItem}
           isChecking={isChecking}
+          isOffline={isOffline}
         />
       ) : (
         <InventoryGrid
@@ -1272,6 +1273,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           onEdit={handleOpenEdit}
           onDelete={setPendingDeleteItem}
           isChecking={isChecking}
+          isOffline={isOffline}
         />
       )}
 
@@ -1297,7 +1299,8 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             <Button
               type="button"
               size="sm"
-              onClick={() => setBulkAssignOpen(true)}
+              disabled={isOffline}
+              onClick={() => !isOffline && setBulkAssignOpen(true)}
             >
               <Layers className="size-3.5" aria-hidden="true" />
               <span>Bulk Assign</span>
@@ -1341,6 +1344,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           preselectedItem={checkoutItemTarget}
           onCheckout={checkoutItem}
           isSubmitting={isCheckingOut}
+          isOffline={isOffline}
         />
       )}
 
@@ -1407,7 +1411,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              disabled={isDeleting}
+              disabled={isDeleting || isOffline}
               onClick={(event) => {
                 event.preventDefault();
                 void handleConfirmDelete();

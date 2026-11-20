@@ -54,10 +54,18 @@ import {
 } from '@/components/ui/sheet';
 import { AccountSettingsDialog } from '@/features/auth/AccountSettingsDialog';
 import { useAuth } from '@/features/auth/useAuth';
+import { useOfflineCatalogSync } from '@/hooks/useOfflineCatalogSync';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { useRealtimeSync, type RealtimeSyncStatus } from '@/hooks/useRealtimeSync';
+import {
+  getOfflineSnapshotSavedAt,
+  OFFLINE_CACHE_UPDATED_EVENT,
+} from '@/lib/offlineCache';
 import { queryKeys } from '@/lib/queryKeys';
 import { cn, getInitials, getUserEmailPrefix } from '@/lib/utils';
 import type { ItemCondition, ProfileRecord, UserRole } from '@/types/database';
+import { MobileBottomNav } from './MobileBottomNav';
+import { OfflineBanner } from './OfflineBanner';
 
 export interface AppNavItem {
   id: string;
@@ -416,11 +424,30 @@ function UserAccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
  * account menu.
  */
 export function AppShell({ children }: { children?: ReactNode }) {
-  const { role, theme, toggleTheme, user, showGateway, isAuthModalOpen } = useAuth();
+  const {
+    role,
+    isLoading: isAuthLoading,
+    theme,
+    toggleTheme,
+    user,
+    showGateway,
+    isAuthModalOpen,
+  } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { isOnline, isOffline } = useOnlineStatus();
+  const cacheUserId = role === 'guest' ? null : (user?.id ?? null);
+  useOfflineCatalogSync({
+    userId: user?.id ?? null,
+    role,
+    isAuthLoading,
+    isOnline,
+  });
   const syncStatus = useRealtimeSync(role);
 
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(() =>
+    getOfflineSnapshotSavedAt(cacheUserId)
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -429,6 +456,18 @@ export function AppShell({ children }: { children?: ReactNode }) {
   const visibleNavItems = APP_NAV_ITEMS.filter((item) => item.allowedRoles.includes(role));
   const cachedInventoryItems = commandOpen ? readCachedInventoryItems(queryClient, role) : [];
   const shortcutLabel = getShortcutLabel();
+
+  useEffect(() => {
+    setLastSyncedAt(getOfflineSnapshotSavedAt(cacheUserId));
+    if (typeof window === 'undefined') return;
+
+    const handleCacheUpdated = () => {
+      setLastSyncedAt(getOfflineSnapshotSavedAt(cacheUserId));
+    };
+
+    window.addEventListener(OFFLINE_CACHE_UPDATED_EVENT, handleCacheUpdated);
+    return () => window.removeEventListener(OFFLINE_CACHE_UPDATED_EVENT, handleCacheUpdated);
+  }, [cacheUserId, isOffline]);
 
   useEffect(() => {
     if (!user) {
@@ -591,9 +630,17 @@ export function AppShell({ children }: { children?: ReactNode }) {
           </div>
         </header>
 
+        <OfflineBanner isOffline={isOffline} lastSyncedAt={lastSyncedAt} />
+
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
           {children !== undefined ? children : <Outlet />}
         </main>
+
+        <MobileBottomNav
+          role={role}
+          onOpenMore={() => setMobileNavOpen(true)}
+          isMoreOpen={mobileNavOpen}
+        />
       </div>
 
       {/* Cmd/Ctrl+K Command Palette */}
@@ -657,7 +704,13 @@ export function AppShell({ children }: { children?: ReactNode }) {
         </CommandList>
       </CommandDialog>
 
-      {user && <AccountSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />}
+      {user && (
+        <AccountSettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          isOffline={isOffline}
+        />
+      )}
     </div>
   );
 }

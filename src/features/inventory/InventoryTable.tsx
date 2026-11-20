@@ -83,6 +83,7 @@ export interface InventoryTableProps {
   onEdit?: (item: EnrichedInventoryItem) => void;
   onDelete?: (item: EnrichedInventoryItem) => void;
   isChecking?: boolean;
+  isOffline?: boolean;
 }
 
 const inventoryTableFeatures = tableFeatures({
@@ -124,6 +125,7 @@ export function InventoryTable({
   onEdit,
   onDelete,
   isChecking = false,
+  isOffline = false,
 }: InventoryTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState<PaginationState>({
@@ -328,7 +330,7 @@ export function InventoryTable({
                   <QuickCheckButtons
                     item={entry}
                     onQuickCheck={onQuickCheck}
-                    disabled={isChecking}
+                    disabled={isChecking || isOffline}
                     layout="inline"
                   />
                 )}
@@ -364,6 +366,7 @@ export function InventoryTable({
                       className="size-8 text-muted-foreground hover:text-foreground"
                       aria-label={`Edit ${entry.item}`}
                       title="Edit item"
+                      disabled={isOffline}
                       onClick={() => onEdit?.(entry)}
                     >
                       <Edit2 className="size-4" aria-hidden="true" />
@@ -375,6 +378,7 @@ export function InventoryTable({
                       className="size-8 text-muted-foreground hover:text-destructive"
                       aria-label={`Move ${entry.item} to Trash`}
                       title="Move to Trash"
+                      disabled={isOffline}
                       onClick={() => onDelete?.(entry)}
                     >
                       <Trash2 className="size-4" aria-hidden="true" />
@@ -395,6 +399,7 @@ export function InventoryTable({
       commentCounts,
       equipmentTypes,
       isChecking,
+      isOffline,
       locations,
       onDelete,
       onEdit,

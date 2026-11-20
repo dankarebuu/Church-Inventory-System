@@ -53,6 +53,7 @@ export interface InventoryGridProps {
   onEdit?: (item: EnrichedInventoryItem) => void;
   onDelete?: (item: EnrichedInventoryItem) => void;
   isChecking?: boolean;
+  isOffline?: boolean;
 }
 
 interface ItemGroup {
@@ -89,6 +90,7 @@ export function InventoryGrid({
   onEdit,
   onDelete,
   isChecking = false,
+  isOffline = false,
 }: InventoryGridProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
@@ -396,7 +398,7 @@ export function InventoryGrid({
                           <QuickCheckButtons
                             item={item}
                             onQuickCheck={onQuickCheck}
-                            disabled={isChecking}
+                            disabled={isChecking || isOffline}
                             layout="grid"
                           />
                         )}
@@ -450,6 +452,7 @@ export function InventoryGrid({
                                   className="size-8 text-muted-foreground hover:text-foreground"
                                   aria-label={`Edit ${item.item}`}
                                   title="Edit item"
+                                  disabled={isOffline}
                                   onClick={() => onEdit?.(item)}
                                 >
                                   <Edit2 className="size-4" aria-hidden="true" />
@@ -461,6 +464,7 @@ export function InventoryGrid({
                                   className="size-8 text-muted-foreground hover:text-destructive"
                                   aria-label={`Move ${item.item} to Trash`}
                                   title="Move to Trash"
+                                  disabled={isOffline}
                                   onClick={() => onDelete?.(item)}
                                 >
                                   <Trash2 className="size-4" aria-hidden="true" />

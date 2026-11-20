@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -21,6 +22,7 @@ import { useAuth } from './useAuth';
 export interface AccountSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  isOffline?: boolean;
 }
 
 function readMetaString(value: unknown): string {
@@ -49,6 +51,7 @@ function deriveInitialNames(
 export function AccountSettingsDialog({
   open,
   onOpenChange,
+  isOffline = false,
 }: AccountSettingsDialogProps) {
   const { user, profile, refreshProfile } = useAuth();
 
@@ -98,6 +101,7 @@ export function AccountSettingsDialog({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isOffline) return;
     setErrorMessage(null);
 
     const trimmedFirst = firstName.trim();
@@ -172,6 +176,10 @@ export function AccountSettingsDialog({
             Update your display name or optionally change your password.
           </DialogDescription>
         </DialogHeader>
+
+        {isOffline && (
+          <OfflineNotice message="You are offline. Account changes cannot be saved until connection returns." />
+        )}
 
         {errorMessage && (
           <div
@@ -249,7 +257,7 @@ export function AccountSettingsDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" disabled={isSubmitting || isOffline}>
               {isSubmitting ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>

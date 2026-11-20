@@ -5,6 +5,7 @@ import type { User } from '@supabase/supabase-js';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextValue } from '@/features/auth/useAuth';
+import { saveOfflineSnapshot } from '@/lib/offlineCache';
 import { queryKeys } from '@/lib/queryKeys';
 import type { ProfileRecord, PublicInventoryItem, UserRole } from '@/types/database';
 import { AppShell } from './AppShell';
@@ -307,5 +308,52 @@ describe('AppShell', () => {
     const memberPill = screen.getByRole('status', { name: /Realtime sync: Live Sync/i });
     expect(memberPill).toBeInTheDocument();
     expect(memberPill).toHaveAttribute('title', expect.stringMatching(/live realtime/i));
+  });
+
+  it('renders OfflineBanner with last synced timestamp when offline and MobileBottomNav with Guest vs Staff tabs', async () => {
+    const user = userEvent.setup();
+    localStorage.clear();
+    saveOfflineSnapshot('guest', {
+      inventory: [],
+      categories: [],
+      equipment_types: [],
+      locations: [],
+      savedAt: '2026-11-20T09:15:00.000Z',
+    });
+
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      const { unmount } = renderShell('guest');
+
+      const offlineBanner = screen.getByRole('status', { name: '' }) || screen.getByText(/Offline — View-Only Mode/i).closest('[role="status"]');
+      expect(offlineBanner).toBeInTheDocument();
+      expect(screen.getByText(/Offline — View-Only Mode \(last synced/i)).toBeInTheDocument();
+
+      const guestBottomNav = screen.getByRole('navigation', { name: /mobile bottom navigation/i });
+      expect(within(guestBottomNav).getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
+      expect(within(guestBottomNav).getByRole('link', { name: 'Inventory' })).toBeInTheDocument();
+      expect(within(guestBottomNav).getByRole('link', { name: 'Checklist' })).toBeInTheDocument();
+      expect(within(guestBottomNav).getByRole('link', { name: 'Categories' })).toBeInTheDocument();
+      expect(within(guestBottomNav).queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
+      unmount();
+
+      // Back online hides OfflineBanner and shows Staff MobileBottomNav with More opening mobile Sheet
+      onLineSpy.mockReturnValue(true);
+      renderShell('admin');
+      expect(screen.queryByText(/Offline — View-Only Mode/i)).not.toBeInTheDocument();
+
+      const staffBottomNav = screen.getByRole('navigation', { name: /mobile bottom navigation/i });
+      expect(within(staffBottomNav).getByRole('link', { name: 'Loans' })).toBeInTheDocument();
+      expect(within(staffBottomNav).queryByRole('link', { name: 'Categories' })).not.toBeInTheDocument();
+
+      await user.click(within(staffBottomNav).getByRole('button', { name: 'More' }));
+      const drawer = await screen.findByRole('dialog');
+      expect(within(drawer).getByText('Categories & Locations')).toBeInTheDocument();
+      expect(within(drawer).getByText('Activity Log')).toBeInTheDocument();
+      expect(within(drawer).getByText('Team Roles')).toBeInTheDocument();
+    } finally {
+      onLineSpy.mockRestore();
+      localStorage.clear();
+    }
   });
 });

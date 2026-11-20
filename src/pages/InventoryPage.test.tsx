@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -377,7 +377,7 @@ function renderInventoryPage(
     defaultOptions: { queries: { retry: false } },
   });
 
-  return render(
+  const renderResult = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <Routes>
@@ -386,6 +386,8 @@ function renderInventoryPage(
       </MemoryRouter>
     </QueryClientProvider>
   );
+
+  return { ...renderResult, queryClient };
 }
 
 describe('InventoryPage', () => {
@@ -888,5 +890,38 @@ describe('InventoryPage', () => {
         existingPhotoCount: 1,
       });
     });
+  });
+
+  it('disables Admin and Member mutations offline and triggers background refetch on offline -> online transition', async () => {
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      const { queryClient } = renderInventoryPage('admin');
+      const invalidateSpy = vi
+        .spyOn(queryClient, 'invalidateQueries')
+        .mockResolvedValue();
+
+      expect(screen.getByRole('status')).toHaveTextContent(/Offline — edits, condition checks/i);
+      expect(screen.getByRole('button', { name: /add item/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /import/i })).toBeDisabled();
+
+      const snareCard = screen.getByText('Pearl Brass Snare').closest('article')!;
+      expect(within(snareCard).getByRole('button', { name: /^ok$/i })).toBeDisabled();
+      expect(within(snareCard).getByRole('button', { name: /^fix$/i })).toBeDisabled();
+      expect(within(snareCard).getByRole('button', { name: /^lost$/i })).toBeDisabled();
+      expect(within(snareCard).getByRole('button', { name: /edit pearl brass snare/i })).toBeDisabled();
+      expect(within(snareCard).getByRole('button', { name: /move pearl brass snare to trash/i })).toBeDisabled();
+
+      act(() => {
+        onLineSpy.mockReturnValue(true);
+        window.dispatchEvent(new Event('online'));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /add item/i })).toBeEnabled();
+      });
+      expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      onLineSpy.mockRestore();
+    }
   });
 });

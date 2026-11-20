@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +47,7 @@ import {
   getProfileDisplayName,
   useTeamRoles,
 } from '@/features/team/useTeamRoles';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { formatDisplayDate, getInitials } from '@/lib/utils';
 import type { ProfileRecord } from '@/types/database';
 
@@ -73,6 +75,7 @@ export function TeamPage() {
   const [updatingProfileId, setUpdatingProfileId] = useState<string | null>(null);
   const [pendingSelfDemotion, setPendingSelfDemotion] =
     useState<ProfileRecord | null>(null);
+  const { isOffline } = useOnlineStatus();
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
 
@@ -103,6 +106,7 @@ export function TeamPage() {
     targetProfile: ProfileRecord,
     targetRole: 'member' | 'admin'
   ) => {
+    if (isOffline) return;
     setUpdatingProfileId(targetProfile.id);
     const displayName = getProfileDisplayName(targetProfile);
     try {
@@ -124,6 +128,7 @@ export function TeamPage() {
   };
 
   const handleToggleRole = (targetProfile: ProfileRecord) => {
+    if (isOffline) return;
     const nextRole: 'member' | 'admin' =
       targetProfile.role === 'admin' ? 'member' : 'admin';
 
@@ -175,6 +180,10 @@ export function TeamPage() {
       </div>
 
       {/* Supabase Auth Invitation Guidance */}
+      {isOffline && (
+        <OfflineNotice message="Offline — team role changes are disabled until connection returns." />
+      )}
+
       <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/8 p-4 text-sm">
         <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
         <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
@@ -363,7 +372,7 @@ export function TeamPage() {
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={isLastAdmin || isRowUpdating || isUpdating}
+                          disabled={isLastAdmin || isRowUpdating || isUpdating || isOffline}
                           onClick={() => handleToggleRole(profile)}
                         >
                           {isRowUpdating ? (
@@ -419,7 +428,7 @@ export function TeamPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isUpdating}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              disabled={isUpdating}
+              disabled={isUpdating || isOffline}
               onClick={(event) => {
                 event.preventDefault();
                 if (pendingSelfDemotion) {

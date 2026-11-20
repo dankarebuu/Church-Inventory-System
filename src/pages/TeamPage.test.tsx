@@ -197,4 +197,19 @@ describe('TeamPage', () => {
     expect(screen.getByText('sarah@wingmacc.org')).toBeInTheDocument();
     expect(screen.queryByText('eli@wingmacc.org')).not.toBeInTheDocument();
   });
+
+  it('disables role promotion and demotion controls with offline notice when offline', () => {
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      renderTeamPage([adminOne, adminTwo, memberOne]);
+
+      expect(screen.getByText(/Offline — team role changes are disabled/i)).toBeInTheDocument();
+      for (const btn of screen.getAllByRole('button', { name: /demote to member/i })) {
+        expect(btn).toBeDisabled();
+      }
+      expect(screen.getByRole('button', { name: /promote to admin/i })).toBeDisabled();
+    } finally {
+      onLineSpy.mockRestore();
+    }
+  });
 });

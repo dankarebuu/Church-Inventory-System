@@ -2,6 +2,10 @@ import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  saveOfflineSnapshot,
+  setActiveOfflineCacheUserId,
+} from '@/lib/offlineCache';
 import { queryKeys } from '@/lib/queryKeys';
 import type {
   Category,
@@ -443,6 +447,41 @@ describe('useInventoryItems', () => {
         refetchInterval: false,
       })
     );
+  });
+
+  it('hydrates offline snapshot per namespace when offline without leaking member cache to guests', () => {
+    localStorage.clear();
+    saveOfflineSnapshot('guest', {
+      inventory: [makePublicItem({ id: 'g-1', item: 'Guest Cached Mic' })],
+      savedAt: '2026-11-20T08:00:00.000Z',
+    });
+    saveOfflineSnapshot('user-1', {
+      inventory: [makePublicItem({ id: 'm-1', item: 'Member Cached Snare' })],
+      savedAt: '2026-11-20T08:30:00.000Z',
+    });
+
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      setActiveOfflineCacheUserId('user-1');
+      const guestClient = createTestQueryClient();
+      const { result: guestResult, unmount } = renderHook(
+        () => useInventoryItems('guest'),
+        { wrapper: createWrapper(guestClient) }
+      );
+      expect(guestResult.current.data?.map((i) => i.item)).toEqual(['Guest Cached Mic']);
+      unmount();
+
+      const memberClient = createTestQueryClient();
+      const { result: memberResult } = renderHook(
+        () => useInventoryItems('member'),
+        { wrapper: createWrapper(memberClient) }
+      );
+      expect(memberResult.current.data?.map((i) => i.item)).toEqual(['Member Cached Snare']);
+    } finally {
+      setActiveOfflineCacheUserId(null);
+      onLineSpy.mockRestore();
+      localStorage.clear();
+    }
   });
 });
 

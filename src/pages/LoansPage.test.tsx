@@ -478,4 +478,21 @@ describe('LoansPage', () => {
       /loan capacity exceeded/i
     );
   });
+
+  it('disables Check Out Gear and Return Gear actions with offline notice when offline', () => {
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      renderLoansPage('member');
+
+      expect(screen.getByText(/Offline — equipment check-outs and gear returns are disabled/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /check out gear/i })).toBeDisabled();
+      const returnButtons = screen.getAllByRole('button', { name: /return gear/i });
+      expect(returnButtons.length).toBeGreaterThan(0);
+      for (const btn of returnButtons) {
+        expect(btn).toBeDisabled();
+      }
+    } finally {
+      onLineSpy.mockRestore();
+    }
+  });
 });

@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/useAuth';
+import {
+  getActiveOfflineCacheUserId,
+  getOfflineInitialSlice,
+  isOfflineNetworkError,
+  loadOfflineSnapshot,
+} from '@/lib/offlineCache';
 import { queryKeys } from '@/lib/queryKeys';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { isUniqueConstraintError, trimOrNull } from '@/lib/utils';
@@ -98,11 +104,33 @@ async function fetchEquipmentTypes(): Promise<EquipmentType[]> {
  * Fetches equipment types sorted by `sort_order`, then `name`.
  */
 export function useEquipmentTypes() {
+  const cacheOwnerId = getActiveOfflineCacheUserId();
+  const offlineInitial = isSupabaseConfigured
+    ? getOfflineInitialSlice('equipment_types', cacheOwnerId)
+    : null;
+
   return useQuery<EquipmentType[], Error>({
     queryKey: queryKeys.equipmentTypes,
-    queryFn: fetchEquipmentTypes,
+    queryFn: async () => {
+      try {
+        return await fetchEquipmentTypes();
+      } catch (err) {
+        if (isOfflineNetworkError(err)) {
+          const fallback = loadOfflineSnapshot(getActiveOfflineCacheUserId());
+          if (fallback) {
+            return fallback.equipment_types;
+          }
+        }
+        throw err;
+      }
+    },
     enabled: isSupabaseConfigured,
-    initialData: isSupabaseConfigured ? undefined : EMPTY_EQUIPMENT_TYPES,
+    initialData: !isSupabaseConfigured
+      ? EMPTY_EQUIPMENT_TYPES
+      : offlineInitial
+        ? offlineInitial.data
+        : undefined,
+    initialDataUpdatedAt: offlineInitial ? offlineInitial.updatedAt : undefined,
   });
 }
 

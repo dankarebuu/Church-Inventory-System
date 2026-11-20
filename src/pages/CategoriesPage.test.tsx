@@ -821,4 +821,36 @@ describe('CategoriesPage', () => {
       expect(mockDeleteEquipmentType).toHaveBeenCalledWith('et-inst');
     });
   });
+
+  it('disables Admin add, edit, and delete actions across Categories, Locations, and Equipment Types when offline', async () => {
+    const user = userEvent.setup();
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      renderCategoriesPage('admin');
+
+      expect(
+        screen.getByText(/Offline — adding, editing, or deleting categories, locations, and equipment types is disabled/i)
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /add category/i })).toBeDisabled();
+
+      const drumsCard = screen.getByRole('article', { name: /drums/i });
+      expect(within(drumsCard).getByRole('button', { name: /add subcategory/i })).toBeDisabled();
+      expect(within(drumsCard).getByRole('button', { name: /edit drums/i })).toBeDisabled();
+      expect(within(drumsCard).getByRole('button', { name: /delete drums/i })).toBeDisabled();
+      expect(within(drumsCard).getByRole('button', { name: /edit cymbals/i })).toBeDisabled();
+      expect(within(drumsCard).getByRole('button', { name: /delete cymbals/i })).toBeDisabled();
+
+      await user.click(screen.getByRole('tab', { name: /storage locations/i }));
+      expect(screen.getByRole('button', { name: /add location/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /edit stage/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /delete stage/i })).toBeDisabled();
+
+      await user.click(screen.getByRole('tab', { name: /equipment types/i }));
+      expect(screen.getByRole('button', { name: /add equipment type/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /edit instruments/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /delete instruments/i })).toBeDisabled();
+    } finally {
+      onLineSpy.mockRestore();
+    }
+  });
 });

@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/useAuth';
+import {
+  getActiveOfflineCacheUserId,
+  getOfflineInitialSlice,
+  isOfflineNetworkError,
+  loadOfflineSnapshot,
+} from '@/lib/offlineCache';
 import { queryKeys } from '@/lib/queryKeys';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { isUniqueConstraintError, trimOrNull } from '@/lib/utils';
@@ -37,11 +43,33 @@ async function fetchLocations(): Promise<LocationRecord[]> {
  * Fetches storage locations sorted by `sort_order`, then `name`.
  */
 export function useLocations() {
+  const cacheOwnerId = getActiveOfflineCacheUserId();
+  const offlineInitial = isSupabaseConfigured
+    ? getOfflineInitialSlice('locations', cacheOwnerId)
+    : null;
+
   return useQuery<LocationRecord[], Error>({
     queryKey: queryKeys.locations,
-    queryFn: fetchLocations,
+    queryFn: async () => {
+      try {
+        return await fetchLocations();
+      } catch (err) {
+        if (isOfflineNetworkError(err)) {
+          const fallback = loadOfflineSnapshot(getActiveOfflineCacheUserId());
+          if (fallback) {
+            return fallback.locations;
+          }
+        }
+        throw err;
+      }
+    },
     enabled: isSupabaseConfigured,
-    initialData: isSupabaseConfigured ? undefined : EMPTY_LOCATIONS,
+    initialData: !isSupabaseConfigured
+      ? EMPTY_LOCATIONS
+      : offlineInitial
+        ? offlineInitial.data
+        : undefined,
+    initialDataUpdatedAt: offlineInitial ? offlineInitial.updatedAt : undefined,
   });
 }
 

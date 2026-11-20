@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +33,7 @@ import {
 import { CheckoutDialog } from '@/features/loans/CheckoutDialog';
 import { isLoanOverdue } from '@/features/loans/schemas';
 import { useLoans } from '@/features/loans/useLoans';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { cn, formatDisplayDate } from '@/lib/utils';
 import type { LoanRecord } from '@/types/database';
 
@@ -81,6 +83,7 @@ export function LoansPage() {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [returningLoanId, setReturningLoanId] = useState<string | null>(null);
+  const { isOffline } = useOnlineStatus();
 
   const {
     activeLoans,
@@ -157,7 +160,7 @@ export function LoansPage() {
   };
 
   const handleReturnGear = async (loan: LoanRecord) => {
-    if (!canManageLoans) return;
+    if (!canManageLoans || isOffline) return;
     const matchedItem = itemsById.get(loan.item_id);
     const itemName = matchedItem?.item ?? loan.item_id;
 
@@ -207,12 +210,20 @@ export function LoansPage() {
         </div>
 
         {canManageLoans && (
-          <Button type="button" onClick={() => setCheckoutOpen(true)}>
+          <Button
+            type="button"
+            disabled={isOffline}
+            onClick={() => !isOffline && setCheckoutOpen(true)}
+          >
             <ArrowLeftRight className="size-4" aria-hidden="true" />
             <span>Check Out Gear</span>
           </Button>
         )}
       </div>
+
+      {isOffline && canManageLoans && (
+        <OfflineNotice message="Offline — equipment check-outs and gear returns are disabled until connection returns." />
+      )}
 
       {/* Search & Filter Toolbar */}
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
@@ -347,7 +358,11 @@ export function LoansPage() {
                   </Button>
                 ) : (
                   canManageLoans && (
-                    <Button type="button" onClick={() => setCheckoutOpen(true)}>
+                    <Button
+                      type="button"
+                      disabled={isOffline}
+                      onClick={() => !isOffline && setCheckoutOpen(true)}
+                    >
                       <ArrowLeftRight className="size-4" aria-hidden="true" />
                       <span>Check Out Gear</span>
                     </Button>
@@ -451,7 +466,7 @@ export function LoansPage() {
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                disabled={isRowReturning}
+                                disabled={isRowReturning || isOffline}
                                 onClick={() => void handleReturnGear(loan)}
                               >
                                 {isRowReturning ? (
@@ -601,6 +616,7 @@ export function LoansPage() {
           items={items}
           onCheckout={checkoutItem}
           isSubmitting={isCheckingOut}
+          isOffline={isOffline}
         />
       )}
     </section>

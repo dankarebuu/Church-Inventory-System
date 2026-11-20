@@ -321,4 +321,46 @@ describe('ItemDetailDrawer', () => {
     expect(onAddPhoto).not.toHaveBeenCalled();
     expect(await within(activeDrawer).findByRole('alert')).toHaveTextContent(/notes\.txt/i);
   });
+
+  it('disables Quick Sunday Check, Check Out, Return, Edit, and Trash controls when isOffline is true', () => {
+    renderDrawer('admin', {
+      item: makeItem({
+        available_qty: 2,
+        qty_on_loan: 1,
+        activeLoans: [
+          {
+            id: 'loan-offline-1',
+            item_id: 'item-1',
+            borrower_name: 'Joel Santos',
+            borrower_contact: '09171234567',
+            qty_loaned: 1,
+            checked_out_at: '2026-11-20T08:00:00.000Z',
+            due_date: '2026-11-25',
+            returned_at: null,
+            checked_out_by: 'dan@wingmacc.org',
+            returned_by: null,
+            notes: null,
+          },
+        ],
+      }),
+      onAddPhoto: vi.fn(),
+      onQuickCheck: vi.fn(),
+      onCheckout: vi.fn(),
+      onReturnLoan: vi.fn(),
+      onEdit: vi.fn(),
+      onDelete: vi.fn(),
+      isOffline: true,
+    });
+
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByText(/Offline read-only mode/i)).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: /^ok$/i })).toBeDisabled();
+    expect(within(drawer).getByRole('button', { name: /^fix$/i })).toBeDisabled();
+    expect(within(drawer).getByRole('button', { name: /^lost$/i })).toBeDisabled();
+    expect(within(drawer).getByRole('button', { name: /take \/ add photo/i })).toBeDisabled();
+    expect(within(drawer).getByRole('button', { name: /^check out$/i })).toBeDisabled();
+    expect(within(drawer).getByRole('button', { name: /^return$/i })).toBeDisabled();
+    expect(within(drawer).getByRole('button', { name: /^edit$/i })).toBeDisabled();
+    expect(within(drawer).getByRole('button', { name: /^trash$/i })).toBeDisabled();
+  });
 });

@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
+import { PwaUpdatePrompt } from '@/components/layout/PwaUpdatePrompt';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthModal } from '@/features/auth/AuthModal';
 import { AuthProvider } from '@/features/auth/useAuth';
@@ -148,6 +149,7 @@ export function AppRoutes() {
 
       <WelcomeGateway />
       <AuthModal />
+      <PwaUpdatePrompt />
       <Toaster />
     </>
   );

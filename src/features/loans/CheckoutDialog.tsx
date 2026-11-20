@@ -3,6 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertCircle, ArrowLeftRight, Loader2 } from 'lucide-react';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -37,6 +38,7 @@ export interface CheckoutDialogProps {
   preselectedItem?: EnrichedInventoryItem | null;
   onCheckout?: (input: CheckoutItemInput) => Promise<unknown>;
   isSubmitting?: boolean;
+  isOffline?: boolean;
 }
 
 function buildDefaultValues(preselectedItemId: string | null): CheckoutFormInput {
@@ -61,6 +63,7 @@ export function CheckoutDialog({
   preselectedItem = null,
   onCheckout,
   isSubmitting: externalIsSubmitting,
+  isOffline = false,
 }: CheckoutDialogProps) {
   const { checkoutItem: hookCheckoutItem, isCheckingOut: hookIsCheckingOut } =
     useLoanMutations();
@@ -150,6 +153,7 @@ export function CheckoutDialog({
   }, [open, currentTargetId, reset]);
 
   const onValidSubmit = async (values: CheckoutFormValues) => {
+    if (isOffline) return;
     setSubmitError(null);
 
     const targetItem =
@@ -203,6 +207,10 @@ export function CheckoutDialog({
             Record borrower details, quantity loaned, and optional return due date.
           </DialogDescription>
         </DialogHeader>
+
+        {isOffline && (
+          <OfflineNotice message="You are offline. Equipment check-outs cannot be submitted until connection returns." />
+        )}
 
         {submitError && (
           <div
@@ -349,7 +357,7 @@ export function CheckoutDialog({
             </Button>
             <Button
               type="submit"
-              disabled={busy || noAvailableItems || preselectedOutOfStock}
+              disabled={busy || noAvailableItems || preselectedOutOfStock || isOffline}
             >
               {busy ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />

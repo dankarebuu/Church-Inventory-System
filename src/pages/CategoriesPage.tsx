@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +60,7 @@ import {
   useLocationMutations,
   useLocations,
 } from '@/features/locations/useLocations';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import type { Category, EquipmentType, LocationRecord } from '@/types/database';
 
 type CategoriesTab = 'categories' | 'locations' | 'types';
@@ -171,6 +173,7 @@ export function CategoriesPage() {
     useState<PendingEquipmentTypeDelete | null>(null);
 
   const canAdmin = role === 'admin';
+  const { isOffline } = useOnlineStatus();
 
   const categoryTree = useMemo(() => buildCategoryTree(categories), [categories]);
   const sortedLocations = useMemo(() => sortLocations(locations), [locations]);
@@ -213,28 +216,28 @@ export function CategoriesPage() {
   };
 
   const handleOpenAddCategory = () => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setEditingCategory(null);
     setDefaultParentId(null);
     setCategoryDialogOpen(true);
   };
 
   const handleOpenAddSubcategory = (parentId: string) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setEditingCategory(null);
     setDefaultParentId(parentId);
     setCategoryDialogOpen(true);
   };
 
   const handleOpenEditCategory = (cat: Category) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setEditingCategory(cat);
     setDefaultParentId(cat.parent_id);
     setCategoryDialogOpen(true);
   };
 
   const handleRequestDeleteCategory = (node: CategoryTreeNode) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setPendingDeleteCategory({
       category: node,
       linkedItemCount: categoryCounts.byTopCategoryId.get(node.id) ?? 0,
@@ -243,7 +246,7 @@ export function CategoriesPage() {
   };
 
   const handleRequestDeleteSubcategory = (sub: Category) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setPendingDeleteCategory({
       category: sub,
       linkedItemCount: categoryCounts.bySubcategoryId.get(sub.id) ?? 0,
@@ -252,7 +255,7 @@ export function CategoriesPage() {
   };
 
   const handleConfirmDeleteCategory = async () => {
-    if (!pendingDeleteCategory || !canAdmin) return;
+    if (!pendingDeleteCategory || !canAdmin || isOffline) return;
     const target = pendingDeleteCategory.category;
     try {
       await deleteCategory(target.id);
@@ -265,19 +268,19 @@ export function CategoriesPage() {
   };
 
   const handleOpenAddLocation = () => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setEditingLocation(null);
     setLocationDialogOpen(true);
   };
 
   const handleOpenEditLocation = (loc: LocationRecord) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setEditingLocation(loc);
     setLocationDialogOpen(true);
   };
 
   const handleRequestDeleteLocation = (loc: LocationRecord) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setPendingDeleteLocation({
       location: loc,
       linkedItemCount: locationCounts.get(loc.id) ?? 0,
@@ -285,7 +288,7 @@ export function CategoriesPage() {
   };
 
   const handleConfirmDeleteLocation = async () => {
-    if (!pendingDeleteLocation || !canAdmin) return;
+    if (!pendingDeleteLocation || !canAdmin || isOffline) return;
     const target = pendingDeleteLocation.location;
     try {
       await deleteLocation(target.id);
@@ -298,19 +301,19 @@ export function CategoriesPage() {
   };
 
   const handleOpenAddEquipmentType = () => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setEditingEquipmentType(null);
     setEquipmentTypeDialogOpen(true);
   };
 
   const handleOpenEditEquipmentType = (equipmentType: EquipmentType) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setEditingEquipmentType(equipmentType);
     setEquipmentTypeDialogOpen(true);
   };
 
   const handleRequestDeleteEquipmentType = (equipmentType: EquipmentType) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     setPendingDeleteEquipmentType({
       equipmentType,
       linkedItemCount: equipmentTypeCounts.get(equipmentType.id) ?? 0,
@@ -318,7 +321,7 @@ export function CategoriesPage() {
   };
 
   const handleConfirmDeleteEquipmentType = async () => {
-    if (!pendingDeleteEquipmentType || !canAdmin) return;
+    if (!pendingDeleteEquipmentType || !canAdmin || isOffline) return;
     const target = pendingDeleteEquipmentType.equipmentType;
     try {
       await deleteEquipmentType(target.id);
@@ -350,17 +353,17 @@ export function CategoriesPage() {
         {canAdmin && (
           <div className="flex items-center gap-2">
             {activeTab === 'categories' ? (
-              <Button type="button" onClick={handleOpenAddCategory}>
+              <Button type="button" disabled={isOffline} onClick={handleOpenAddCategory}>
                 <Plus className="size-4" aria-hidden="true" />
                 <span>Add Category</span>
               </Button>
             ) : activeTab === 'locations' ? (
-              <Button type="button" onClick={handleOpenAddLocation}>
+              <Button type="button" disabled={isOffline} onClick={handleOpenAddLocation}>
                 <Plus className="size-4" aria-hidden="true" />
                 <span>Add Location</span>
               </Button>
             ) : (
-              <Button type="button" onClick={handleOpenAddEquipmentType}>
+              <Button type="button" disabled={isOffline} onClick={handleOpenAddEquipmentType}>
                 <Plus className="size-4" aria-hidden="true" />
                 <span>Add Equipment Type</span>
               </Button>
@@ -368,6 +371,10 @@ export function CategoriesPage() {
           </div>
         )}
       </div>
+
+      {canAdmin && isOffline && (
+        <OfflineNotice message="Offline — adding, editing, or deleting categories, locations, and equipment types is disabled until connection returns." />
+      )}
 
       {isLoading ? (
         <div
@@ -437,7 +444,7 @@ export function CategoriesPage() {
                   </p>
                 </div>
                 {canAdmin && (
-                  <Button type="button" onClick={handleOpenAddCategory}>
+                  <Button type="button" disabled={isOffline} onClick={handleOpenAddCategory}>
                     <Plus className="size-4" aria-hidden="true" />
                     <span>Add Category</span>
                   </Button>
@@ -552,19 +559,21 @@ export function CategoriesPage() {
                                       <div className="ml-0.5 flex items-center gap-0.5 border-l border-border pl-1">
                                         <button
                                           type="button"
+                                          disabled={isOffline}
                                           onClick={() => handleOpenEditCategory(sub)}
                                           aria-label={`Edit ${sub.name}`}
                                           title={`Edit ${sub.name}`}
-                                          className="cursor-pointer rounded-full p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                          className="cursor-pointer rounded-full p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                         >
                                           <Edit2 className="size-3" aria-hidden="true" />
                                         </button>
                                         <button
                                           type="button"
+                                          disabled={isOffline}
                                           onClick={() => handleRequestDeleteSubcategory(sub)}
                                           aria-label={`Delete ${sub.name}`}
                                           title={`Delete ${sub.name}`}
-                                          className="cursor-pointer rounded-full p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                          className="cursor-pointer rounded-full p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                         >
                                           <Trash2 className="size-3" aria-hidden="true" />
                                         </button>
@@ -586,6 +595,7 @@ export function CategoriesPage() {
                             type="button"
                             size="sm"
                             variant="outline"
+                            disabled={isOffline}
                             onClick={() => handleOpenAddSubcategory(node.id)}
                             className="h-8 px-2.5 text-xs"
                           >
@@ -601,6 +611,7 @@ export function CategoriesPage() {
                               className="size-8 text-muted-foreground hover:text-foreground"
                               aria-label={`Edit ${node.name}`}
                               title={`Edit ${node.name}`}
+                              disabled={isOffline}
                               onClick={() => handleOpenEditCategory(node)}
                             >
                               <Edit2 className="size-4" aria-hidden="true" />
@@ -612,6 +623,7 @@ export function CategoriesPage() {
                               className="size-8 text-muted-foreground hover:text-destructive"
                               aria-label={`Delete ${node.name}`}
                               title={`Delete ${node.name}`}
+                              disabled={isOffline}
                               onClick={() => handleRequestDeleteCategory(node)}
                             >
                               <Trash2 className="size-4" aria-hidden="true" />
@@ -640,7 +652,7 @@ export function CategoriesPage() {
                   </p>
                 </div>
                 {canAdmin && (
-                  <Button type="button" onClick={handleOpenAddLocation}>
+                  <Button type="button" disabled={isOffline} onClick={handleOpenAddLocation}>
                     <Plus className="size-4" aria-hidden="true" />
                     <span>Add Location</span>
                   </Button>
@@ -706,6 +718,7 @@ export function CategoriesPage() {
                               className="size-8 text-muted-foreground hover:text-foreground"
                               aria-label={`Edit ${loc.name}`}
                               title={`Edit ${loc.name}`}
+                              disabled={isOffline}
                               onClick={() => handleOpenEditLocation(loc)}
                             >
                               <Edit2 className="size-4" aria-hidden="true" />
@@ -717,6 +730,7 @@ export function CategoriesPage() {
                               className="size-8 text-muted-foreground hover:text-destructive"
                               aria-label={`Delete ${loc.name}`}
                               title={`Delete ${loc.name}`}
+                              disabled={isOffline}
                               onClick={() => handleRequestDeleteLocation(loc)}
                             >
                               <Trash2 className="size-4" aria-hidden="true" />
@@ -746,7 +760,7 @@ export function CategoriesPage() {
                   </p>
                 </div>
                 {canAdmin && (
-                  <Button type="button" onClick={handleOpenAddEquipmentType}>
+                  <Button type="button" disabled={isOffline} onClick={handleOpenAddEquipmentType}>
                     <Plus className="size-4" aria-hidden="true" />
                     <span>Add Equipment Type</span>
                   </Button>
@@ -831,6 +845,7 @@ export function CategoriesPage() {
                             className="size-8 text-muted-foreground hover:text-foreground"
                             aria-label={`Edit ${et.name}`}
                             title={`Edit ${et.name}`}
+                            disabled={isOffline}
                             onClick={() => handleOpenEditEquipmentType(et)}
                           >
                             <Edit2 className="size-4" aria-hidden="true" />
@@ -842,6 +857,7 @@ export function CategoriesPage() {
                             className="size-8 text-muted-foreground hover:text-destructive"
                             aria-label={`Delete ${et.name}`}
                             title={`Delete ${et.name}`}
+                            disabled={isOffline}
                             onClick={() => handleRequestDeleteEquipmentType(et)}
                           >
                             <Trash2 className="size-4" aria-hidden="true" />
@@ -947,7 +963,7 @@ export function CategoriesPage() {
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={isDeletingCategory}>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  disabled={isDeletingCategory}
+                  disabled={isDeletingCategory || isOffline}
                   onClick={(event) => {
                     event.preventDefault();
                     void handleConfirmDeleteCategory();
@@ -995,7 +1011,7 @@ export function CategoriesPage() {
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={isDeletingLocation}>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  disabled={isDeletingLocation}
+                  disabled={isDeletingLocation || isOffline}
                   onClick={(event) => {
                     event.preventDefault();
                     void handleConfirmDeleteLocation();
@@ -1043,7 +1059,7 @@ export function CategoriesPage() {
                   Cancel
                 </AlertDialogCancel>
                 <AlertDialogAction
-                  disabled={isDeletingEquipmentType}
+                  disabled={isDeletingEquipmentType || isOffline}
                   onClick={(event) => {
                     event.preventDefault();
                     void handleConfirmDeleteEquipmentType();

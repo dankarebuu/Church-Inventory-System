@@ -11,6 +11,11 @@ import {
 import type { Session, User } from '@supabase/supabase-js';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import {
+  clearAllOfflineCaches,
+  clearOfflineCache,
+  setActiveOfflineCacheUserId,
+} from '@/lib/offlineCache';
 import { supabase } from '@/lib/supabase';
 import type { ProfileRecord, UserRole } from '@/types/database';
 
@@ -149,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!mountedRef.current || seq !== requestSeqRef.current) return;
 
+    setActiveOfflineCacheUserId(nextUser.id);
     setUser(nextUser);
     setProfile((prev) => {
       if (lookup.status === 'found') return lookup.profile;
@@ -171,6 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!mountedRef.current || seq !== requestSeqRef.current) return;
         pendingRecoveryRef.current = false;
         latestAuthUserRef.current = null;
+        setActiveOfflineCacheUserId(null);
         setUser(null);
         setProfile(null);
         setIsLoading(false);
@@ -196,7 +203,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((event, session) => {
       const eventSeq = ++requestSeqRef.current;
 
-      if (event === 'SIGNED_OUT' || !session?.user) {
+      if (event === 'SIGNED_OUT') {
+        pendingRecoveryRef.current = false;
+        const previousUserId = userRef.current?.id ?? latestAuthUserRef.current?.id ?? null;
+        if (previousUserId) {
+          clearOfflineCache(previousUserId);
+        }
+        clearAllOfflineCaches();
+        setActiveOfflineCacheUserId(null);
+      } else if (!session?.user) {
         pendingRecoveryRef.current = false;
       } else if (event === 'PASSWORD_RECOVERY') {
         pendingRecoveryRef.current = true;
@@ -272,11 +287,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [commitAuthenticatedUser]);
 
   const signOut = useCallback(async () => {
+    const previousUserId = userRef.current?.id ?? latestAuthUserRef.current?.id ?? null;
     const { error } = await supabase.auth.signOut();
     if (error) {
       toast.error(error.message);
       return;
     }
+
+    if (previousUserId) {
+      clearOfflineCache(previousUserId);
+    }
+    clearAllOfflineCaches();
+    setActiveOfflineCacheUserId(null);
 
     pendingRecoveryRef.current = false;
     latestAuthUserRef.current = null;

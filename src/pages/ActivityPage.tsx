@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +36,7 @@ import {
   useActivityLog,
 } from '@/features/activity/useActivityLog';
 import { useAuth } from '@/features/auth/useAuth';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { cn, formatDisplayDate, getUserEmailPrefix } from '@/lib/utils';
 import type { HistoryAction, HistoryEntry } from '@/types/database';
 
@@ -163,6 +165,7 @@ export function ActivityPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [actionFilter, setActionFilter] = useState<string>(ALL_ACTIONS);
+  const { isOffline } = useOnlineStatus();
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
 
@@ -203,7 +206,7 @@ export function ActivityPage() {
   };
 
   const handleRestore = async (entry: HistoryEntry) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     const itemName = resolveHistoryItemName(entry);
     try {
       await restoreDeletedItem(entry);
@@ -216,7 +219,7 @@ export function ActivityPage() {
   };
 
   const handleUndo = async (entry: HistoryEntry) => {
-    if (!canAdmin) return;
+    if (!canAdmin || isOffline) return;
     const itemName = resolveHistoryItemName(entry);
     try {
       await undoHistoryEntry(entry);
@@ -255,6 +258,10 @@ export function ActivityPage() {
           </Badge>
         )}
       </div>
+
+      {isOffline && canAdmin && (
+        <OfflineNotice message="Offline — Undo and Restore actions are disabled until connection returns." />
+      )}
 
       {/* Search & Filter Toolbar */}
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
@@ -441,7 +448,7 @@ export function ActivityPage() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={isRowBusy}
+                        disabled={isRowBusy || isOffline}
                         onClick={() => void handleRestore(entry)}
                       >
                         {isRowBusy ? (
@@ -458,7 +465,7 @@ export function ActivityPage() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={isRowBusy}
+                        disabled={isRowBusy || isOffline}
                         onClick={() => void handleUndo(entry)}
                       >
                         {isRowBusy ? (

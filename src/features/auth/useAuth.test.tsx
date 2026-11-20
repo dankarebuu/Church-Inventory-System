@@ -4,6 +4,12 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import type { ProfileRecord } from '@/types/database';
+import {
+  getActiveOfflineCacheUserId,
+  getOfflineCacheKey,
+  loadOfflineSnapshot,
+  saveOfflineSnapshot,
+} from '@/lib/offlineCache';
 import { AuthProvider, useAuth } from './useAuth';
 
 type AuthStateCallback = (event: AuthChangeEvent, session: Session | null) => void;
@@ -591,5 +597,47 @@ describe('useAuth / AuthProvider', () => {
       expect(screen.getByTestId('pathname')).toHaveTextContent('/reset-password');
     });
     expect(screen.getByTestId('role')).toHaveTextContent('member');
+  });
+
+  it('purges offline catalog snapshots immediately inside signOut without clearing theme preference', async () => {
+    const user = userEvent.setup();
+    const adminUser = makeUser({ id: 'admin-purge', email: 'admin@wingmacc.org' });
+    const adminProfile: ProfileRecord = {
+      id: 'admin-purge',
+      email: 'admin@wingmacc.org',
+      first_name: 'Dan',
+      last_name: 'Caleb',
+      role: 'admin',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    localStorage.setItem('wingmacc_theme', 'dark');
+    saveOfflineSnapshot('admin-purge', { inventory: [], categories: [] });
+    saveOfflineSnapshot('guest', { inventory: [], categories: [] });
+
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(adminUser) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({ data: adminProfile, error: null });
+
+    renderWithAuth(['/dashboard']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('admin');
+    });
+    expect(getActiveOfflineCacheUserId()).toBe('admin-purge');
+    expect(loadOfflineSnapshot('admin-purge')).not.toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Sign Out' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('guest');
+    });
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(getActiveOfflineCacheUserId()).toBeNull();
+    expect(localStorage.getItem(getOfflineCacheKey('admin-purge'))).toBeNull();
+    expect(localStorage.getItem(getOfflineCacheKey('guest'))).toBeNull();
+    expect(localStorage.getItem('wingmacc_theme')).toBe('dark');
   });
 });

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -55,6 +56,7 @@ import {
   type EnrichedInventoryItem,
 } from '@/features/inventory/useInventory';
 import { sortLocations, useLocations } from '@/features/locations/useLocations';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { cn } from '@/lib/utils';
 import type { Category, ItemCondition, LocationRecord } from '@/types/database';
 
@@ -270,6 +272,7 @@ interface LiveChecklistGroupsProps {
   locations: readonly LocationRecord[];
   checkingItemId: string | null;
   isChecking: boolean;
+  isOffline: boolean;
   onQuickCheck: (item: EnrichedInventoryItem, condition: ItemCondition) => Promise<void>;
   hasActiveFilters: boolean;
   onClearFilters: () => void;
@@ -281,6 +284,7 @@ function LiveChecklistGroups({
   locations,
   checkingItemId,
   isChecking,
+  isOffline,
   onQuickCheck,
   hasActiveFilters,
   onClearFilters,
@@ -431,7 +435,7 @@ function LiveChecklistGroups({
                       <QuickCheckButtons
                         item={item}
                         onQuickCheck={onQuickCheck}
-                        disabled={isChecking || isItemChecking}
+                        disabled={isChecking || isItemChecking || isOffline}
                         layout="grid"
                         size="checklist"
                       />
@@ -640,6 +644,7 @@ export function ChecklistPage() {
   const { data: categories = EMPTY_CATEGORIES } = useCategories();
   const { data: locations = EMPTY_LOCATIONS } = useLocations();
   const { memberCheckItem, isChecking } = useItemMutations();
+  const { isOffline } = useOnlineStatus();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(ALL_OPTION);
@@ -781,7 +786,7 @@ export function ChecklistPage() {
     item: EnrichedInventoryItem,
     condition: ItemCondition
   ) => {
-    if (!canCheck) return;
+    if (!canCheck || isOffline) return;
     setCheckingItemId(item.id);
     try {
       await memberCheckItem({
@@ -906,6 +911,10 @@ export function ChecklistPage() {
 
           {canCheck && (
             <TabsContent value="live" className="no-print space-y-5">
+              {isOffline && (
+                <OfflineNotice message="Offline — Sunday check-offs are disabled until connection returns. Print / PDF Checklist remains available." />
+              )}
+
               <ChecklistProgressCard
                 progress={overallProgress}
                 flaggedCount={flaggedCount}
@@ -936,6 +945,7 @@ export function ChecklistPage() {
                 locations={locations}
                 checkingItemId={checkingItemId}
                 isChecking={isChecking}
+                isOffline={isOffline}
                 onQuickCheck={handleQuickCheck}
                 hasActiveFilters={hasLiveFilters}
                 onClearFilters={handleClearLiveFilters}

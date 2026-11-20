@@ -600,4 +600,24 @@ describe('ChecklistPage', () => {
     expect(screen.getByText(/Last check: November 15, 2026/i)).toBeInTheDocument();
     expect(screen.queryByText(/November 14, 2026/i)).not.toBeInTheDocument();
   });
+
+  it('disables Live Check-Off buttons with offline notice while keeping Print / PDF Checklist usable offline', async () => {
+    const user = userEvent.setup();
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      renderChecklistPage('member');
+
+      expect(screen.getByText(/Offline — Sunday check-offs are disabled/i)).toBeInTheDocument();
+      const snareCard = screen.getByTestId('checklist-item-item-snare');
+      expect(within(snareCard).getByRole('button', { name: /^ok$/i })).toBeDisabled();
+      expect(within(snareCard).getByRole('button', { name: /^fix$/i })).toBeDisabled();
+      expect(within(snareCard).getByRole('button', { name: /^lost$/i })).toBeDisabled();
+
+      await user.click(screen.getByRole('tab', { name: /print \/ pdf checklist/i }));
+      expect(await screen.findByRole('button', { name: /print checklist/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /download pdf/i })).toBeEnabled();
+    } finally {
+      onLineSpy.mockRestore();
+    }
+  });
 });
