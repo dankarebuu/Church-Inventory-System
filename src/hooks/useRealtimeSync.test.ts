@@ -118,7 +118,7 @@ describe('useRealtimeSync', () => {
     expect(mockChannelFn).not.toHaveBeenCalled();
   });
 
-  it('subscribes guests ONLY to categories and locations (never inventory, loans, history_log, or profiles) and reports Catalog Sync', () => {
+  it('subscribes guests ONLY to categories, locations, and equipment_types (never inventory, item_comments, loans, history_log, or profiles) and reports Catalog Sync', () => {
     const queryClient = new QueryClient();
 
     const { result } = renderHook(() => useRealtimeSync('guest'), {
@@ -127,8 +127,9 @@ describe('useRealtimeSync', () => {
 
     expect(mockChannelFn).toHaveBeenCalledTimes(1);
     const guestChannel = createdChannels[0];
-    expect(guestChannel.tables).toEqual(['categories', 'locations']);
+    expect(guestChannel.tables).toEqual(['categories', 'locations', 'equipment_types']);
     expect(guestChannel.tables).not.toContain('inventory');
+    expect(guestChannel.tables).not.toContain('item_comments');
     expect(guestChannel.tables).not.toContain('loans');
     expect(guestChannel.tables).not.toContain('history_log');
     expect(guestChannel.tables).not.toContain('profiles');
@@ -140,7 +141,7 @@ describe('useRealtimeSync', () => {
     expect(result.current.label).toBe('Catalog Sync');
   });
 
-  it('subscribes members to loans and history_log without profiles, and admins to profiles too', () => {
+  it('subscribes members to equipment_types, item_comments, loans, and history_log without profiles, and admins to profiles too', () => {
     const queryClient = new QueryClient();
 
     const { rerender } = renderHook(({ role }: { role: UserRole }) => useRealtimeSync(role), {
@@ -152,6 +153,8 @@ describe('useRealtimeSync', () => {
       'inventory',
       'categories',
       'locations',
+      'equipment_types',
+      'item_comments',
       'loans',
       'history_log',
     ]);
@@ -164,10 +167,65 @@ describe('useRealtimeSync', () => {
       'inventory',
       'categories',
       'locations',
+      'equipment_types',
+      'item_comments',
       'loans',
       'history_log',
       'profiles',
     ]);
+  });
+
+  it('invalidates equipmentTypes for all roles and invalidates item-comments prefix + commentCounts strictly for member/admin', () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    const { rerender } = renderHook(({ role }: { role: UserRole }) => useRealtimeSync(role), {
+      initialProps: { role: 'guest' as UserRole },
+      wrapper: createWrapper(queryClient),
+    });
+
+    const guestChannel = createdChannels[0];
+    expect(guestChannel.handlers.has('item_comments')).toBe(false);
+    emitTableEvent(guestChannel, 'equipment_types');
+    vi.advanceTimersByTime(250);
+
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.equipmentTypes,
+    });
+
+    invalidateSpy.mockClear();
+    rerender({ role: 'member' });
+
+    const memberChannel = createdChannels[1];
+    emitTableEvent(memberChannel, 'equipment_types');
+    emitTableEvent(memberChannel, 'item_comments');
+    vi.advanceTimersByTime(250);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.equipmentTypes,
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['item-comments'],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.commentCounts,
+    });
+
+    invalidateSpy.mockClear();
+    rerender({ role: 'admin' });
+
+    const adminChannel = createdChannels[2];
+    emitTableEvent(adminChannel, 'item_comments');
+    vi.advanceTimersByTime(250);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['item-comments'],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.commentCounts,
+    });
   });
 
   it('coalesces multiple rapid inventory events within 250ms for members and rapid categories events for guests', () => {

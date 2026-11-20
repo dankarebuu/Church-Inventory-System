@@ -18,12 +18,24 @@ type SyncTableName =
   | 'inventory'
   | 'categories'
   | 'locations'
+  | 'equipment_types'
+  | 'item_comments'
   | 'loans'
   | 'history_log'
   | 'profiles';
 
-const GUEST_TABLES: readonly SyncTableName[] = ['categories', 'locations'];
-const MEMBER_TABLES: readonly SyncTableName[] = ['inventory', ...GUEST_TABLES, 'loans', 'history_log'];
+const GUEST_TABLES: readonly SyncTableName[] = [
+  'categories',
+  'locations',
+  'equipment_types',
+];
+const MEMBER_TABLES: readonly SyncTableName[] = [
+  'inventory',
+  ...GUEST_TABLES,
+  'item_comments',
+  'loans',
+  'history_log',
+];
 const ADMIN_TABLES: readonly SyncTableName[] = [...MEMBER_TABLES, 'profiles'];
 
 const STATUS_LABELS: Record<RealtimeSyncState, string> = {
@@ -51,6 +63,10 @@ function getQueryKeysForTable(
       return [queryKeys.categories];
     case 'locations':
       return [queryKeys.locations];
+    case 'equipment_types':
+      return [queryKeys.equipmentTypes];
+    case 'item_comments':
+      return [['item-comments'], queryKeys.commentCounts];
     case 'loans':
       return [queryKeys.loans, queryKeys.inventory(role)];
     case 'history_log':
