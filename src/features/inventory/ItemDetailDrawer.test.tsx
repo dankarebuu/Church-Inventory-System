@@ -363,4 +363,62 @@ describe('ItemDetailDrawer', () => {
     expect(within(drawer).getByRole('button', { name: /^edit$/i })).toBeDisabled();
     expect(within(drawer).getByRole('button', { name: /^trash$/i })).toBeDisabled();
   });
+
+  it('keeps the Radix Sheet root mounted when item is null and closes cleanly when item transitions to null', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    mockUseAuth.mockReturnValue(makeAuthContext('guest'));
+
+    const { container, rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <ItemDetailDrawer
+          item={null}
+          open={false}
+          onOpenChange={vi.fn()}
+          role="guest"
+          categories={sampleCategories}
+          locations={sampleLocations}
+          equipmentTypes={sampleEquipmentTypes}
+        />
+      </QueryClientProvider>
+    );
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ItemDetailDrawer
+          item={makeItem()}
+          open={true}
+          onOpenChange={vi.fn()}
+          role="guest"
+          categories={sampleCategories}
+          locations={sampleLocations}
+          equipmentTypes={sampleEquipmentTypes}
+        />
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ItemDetailDrawer
+          item={null}
+          open={false}
+          onOpenChange={vi.fn()}
+          role="guest"
+          categories={sampleCategories}
+          locations={sampleLocations}
+          equipmentTypes={sampleEquipmentTypes}
+        />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(container).toBeInTheDocument();
+  });
 });

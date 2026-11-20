@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import type { Category, LocationRecord } from '@/types/database';
+import type { Category, EquipmentType, LocationRecord } from '@/types/database';
 import {
   computeChecklistProgress,
   filterChecklistItems,
@@ -280,6 +280,59 @@ describe('checklistUtils', () => {
       expect(memberSearch.map((i) => i.id)).toEqual(['item-snare']);
 
       expect(formatLocalYmd(new Date(2026, 10, 5, 23, 55, 0))).toBe('2026-11-05');
+    });
+
+    it('matches resolved category, equipment type, and location names when denormalized columns are stale or empty', () => {
+      const sampleEquipmentTypes: EquipmentType[] = [
+        {
+          id: 'et-mics',
+          name: 'Microphones',
+          color: '#d3554a',
+          icon: 'mic',
+          sort_order: 10,
+          created_at: '2026-11-20T00:00:00.000Z',
+        },
+      ];
+      const staleItems: EnrichedInventoryItem[] = [
+        {
+          ...sampleItems[0],
+          id: 'item-resolved',
+          item: 'Wireless Capsule',
+          category: 'Old Rig',
+          category_id: 'cat-drums',
+          location: 'Legacy Room',
+          location_id: 'loc-stage',
+          equipment_type_id: 'et-mics',
+          equipment_type: null,
+        },
+      ];
+
+      expect(
+        filterChecklistItems(staleItems, {
+          search: 'Drums',
+          categories: sampleCategories,
+          locations: sampleLocations,
+          equipmentTypes: sampleEquipmentTypes,
+        }).map((i) => i.id)
+      ).toEqual(['item-resolved']);
+
+      expect(
+        filterChecklistItems(staleItems, {
+          search: 'Microphones',
+          categories: sampleCategories,
+          locations: sampleLocations,
+          equipmentTypes: sampleEquipmentTypes,
+        }).map((i) => i.id)
+      ).toEqual(['item-resolved']);
+
+      expect(
+        filterChecklistItems(staleItems, {
+          search: 'Stage',
+          categories: sampleCategories,
+          locations: sampleLocations,
+          equipmentTypes: sampleEquipmentTypes,
+        }).map((i) => i.id)
+      ).toEqual(['item-resolved']);
     });
   });
 });

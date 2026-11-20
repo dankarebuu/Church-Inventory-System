@@ -43,6 +43,7 @@ import {
   type ChecklistProgress,
   type PrintableChecklistItem,
 } from '@/features/checklist/checklistUtils';
+import { useEquipmentTypes } from '@/features/equipmentTypes/useEquipmentTypes';
 import {
   CONDITION_META,
   formatLastCheckedDate,
@@ -58,7 +59,7 @@ import {
 import { sortLocations, useLocations } from '@/features/locations/useLocations';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { cn } from '@/lib/utils';
-import type { Category, ItemCondition, LocationRecord } from '@/types/database';
+import type { Category, EquipmentType, ItemCondition, LocationRecord } from '@/types/database';
 
 type ChecklistTab = 'live' | 'print';
 type Html2PdfFactory = typeof import('html2pdf.js').default;
@@ -67,6 +68,7 @@ const ALL_OPTION = '__all__';
 const EMPTY_ITEMS: EnrichedInventoryItem[] = [];
 const EMPTY_CATEGORIES: Category[] = [];
 const EMPTY_LOCATIONS: LocationRecord[] = [];
+const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
 
 function resolveHtml2PdfFactory(mod: unknown): Html2PdfFactory | null {
   if (typeof mod === 'function') {
@@ -109,7 +111,7 @@ function ChecklistProgressCard({
                 <Badge variant="working">Ready for Service</Badge>
               )}
             </div>
-            <p className="mt-1 text-sm font-medium text-foreground">
+            <p className="mt-1 tabular-nums text-sm font-medium text-foreground">
               {progress.checked} of {progress.total} items checked today
             </p>
             <p className="font-mono text-[11px] text-muted-foreground">
@@ -118,7 +120,7 @@ function ChecklistProgressCard({
           </div>
 
           <div className="flex items-baseline gap-3 self-start sm:self-center">
-            <span className="font-display text-3xl font-bold tracking-tight text-foreground">
+            <span className="font-display text-3xl font-bold tracking-tight tabular-nums text-foreground">
               {progress.percent}%
             </span>
           </div>
@@ -127,15 +129,17 @@ function ChecklistProgressCard({
         <Progress value={progress.percent} aria-label="Sunday check-off progress" />
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Badge variant="outline" className="gap-1">
+          <Badge variant="outline" className="gap-1 tabular-nums">
             <Clock className="size-3" aria-hidden="true" />
             <span>{pendingCount} Pending Today</span>
           </Badge>
           {flaggedCount > 0 && (
-            <Badge variant="repair">{flaggedCount} Flagged</Badge>
+            <Badge variant="repair" className="tabular-nums">
+              {flaggedCount} Flagged
+            </Badge>
           )}
           {hasActiveFilters && (
-            <span className="font-mono text-[11px] text-muted-foreground">
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
               Showing {filteredCount} of {totalCount} items
             </span>
           )}
@@ -332,7 +336,7 @@ function LiveChecklistGroups({
               <h2 className="font-display text-sm font-semibold uppercase tracking-[0.06em] text-foreground">
                 {group.label}
               </h2>
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
                 ({checkedInGroup}/{group.items.length} checked)
               </span>
               <span className="h-px flex-1 bg-border" aria-hidden="true" />
@@ -408,7 +412,7 @@ function LiveChecklistGroups({
                             aria-hidden="true"
                           />
                           <span className="text-muted-foreground">Avail:</span>
-                          <span className="font-mono font-semibold text-foreground">
+                          <span className="font-mono font-semibold tabular-nums text-foreground">
                             {`${item.available_qty} / ${item.qty}`}
                           </span>
                         </div>
@@ -515,9 +519,9 @@ function PrintChecklistSheet({
           {groups.map((group) => (
             <section
               key={group.key}
-              className="print-section break-inside-avoid space-y-2"
+              className="print-section space-y-2"
             >
-              <div className="flex items-center gap-2 border-b-2 border-[#cbd5e1] pb-1.5">
+              <div className="flex items-center gap-2 border-b-2 border-[#cbd5e1] pb-1.5 break-after-avoid">
                 <span
                   aria-hidden="true"
                   className="size-2.5 shrink-0 rounded-full"
@@ -554,7 +558,7 @@ function PrintChecklistSheet({
                       .join(' · ');
 
                     return (
-                      <tr key={entry.id} className="border-b border-[#e2e8f0]">
+                      <tr key={entry.id} className="border-b border-[#e2e8f0] break-inside-avoid">
                         <td className="px-2 py-2 align-middle">
                           <span
                             aria-hidden="true"
@@ -572,7 +576,7 @@ function PrintChecklistSheet({
                         <td className="px-2 py-2 align-middle text-[#1e293b]">
                           {entry.brand ?? '—'}
                         </td>
-                        <td className="px-2 py-2 text-center align-middle font-mono font-semibold text-[#0f172a]">
+                        <td className="px-2 py-2 text-center align-middle font-mono font-semibold tabular-nums text-[#0f172a]">
                           {entry.qty}
                         </td>
                         <td className="px-2 py-2 align-middle text-[#1e293b]">
@@ -643,6 +647,7 @@ export function ChecklistPage() {
   } = useInventoryItems(role);
   const { data: categories = EMPTY_CATEGORIES } = useCategories();
   const { data: locations = EMPTY_LOCATIONS } = useLocations();
+  const { data: equipmentTypes = EMPTY_EQUIPMENT_TYPES } = useEquipmentTypes();
   const { memberCheckItem, isChecking } = useItemMutations();
   const { isOffline } = useOnlineStatus();
 
@@ -651,6 +656,7 @@ export function ChecklistPage() {
   const [selectedLocationId, setSelectedLocationId] = useState<string>(ALL_OPTION);
   const [uncheckedOnly, setUncheckedOnly] = useState(false);
   const [checkingItemId, setCheckingItemId] = useState<string | null>(null);
+  const [lastCheckAnnouncement, setLastCheckAnnouncement] = useState('');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const topCategories = useMemo(
@@ -679,6 +685,7 @@ export function ChecklistPage() {
         uncheckedOnly,
         categories,
         locations,
+        equipmentTypes,
         includeCheckedByInSearch: canCheck,
       }),
     [
@@ -689,6 +696,7 @@ export function ChecklistPage() {
       uncheckedOnly,
       categories,
       locations,
+      equipmentTypes,
       canCheck,
     ]
   );
@@ -705,8 +713,9 @@ export function ChecklistPage() {
         locationId: effectiveLocationId,
         categories,
         locations,
+        equipmentTypes,
       }),
-    [items, effectiveCategoryId, effectiveLocationId, categories, locations]
+    [items, effectiveCategoryId, effectiveLocationId, categories, locations, equipmentTypes]
   );
 
   const printableItems = useMemo(
@@ -794,7 +803,9 @@ export function ChecklistPage() {
         condition,
       });
       const label = CONDITION_META[condition].label;
-      toast.success(`Checked "${item.item}" as ${label}.`);
+      const confirmationMessage = `Checked "${item.item}" as ${label}.`;
+      setLastCheckAnnouncement(confirmationMessage);
+      toast.success(confirmationMessage);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Unable to save checklist check-off.';
@@ -911,6 +922,10 @@ export function ChecklistPage() {
 
           {canCheck && (
             <TabsContent value="live" className="no-print space-y-5">
+              <div aria-live="polite" aria-atomic="true" className="sr-only">
+                {lastCheckAnnouncement}
+              </div>
+
               {isOffline && (
                 <OfflineNotice message="Offline — Sunday check-offs are disabled until connection returns. Print / PDF Checklist remains available." />
               )}

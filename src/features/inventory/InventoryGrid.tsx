@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import {
   ChevronDown,
   Edit2,
@@ -231,7 +231,7 @@ export function InventoryGrid({
               <h2 className="font-display text-sm font-semibold uppercase tracking-[0.06em] text-foreground">
                 {group.label}
               </h2>
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
                 ({group.items.length})
               </span>
               <span className="h-px flex-1 bg-border" aria-hidden="true" />
@@ -273,13 +273,15 @@ export function InventoryGrid({
                   return (
                     <article
                       key={item.id}
+                      data-selected={isSelected || undefined}
+                      style={{ '--card-accent': group.color } as CSSProperties}
                       onClick={() =>
                         selectionMode && onToggleSelect
                           ? onToggleSelect(item.id)
                           : onSelectItem(item)
                       }
                       className={cn(
-                        'group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-xl border border-border bg-card p-4 pl-5 text-card-foreground shadow-card transition-all hover:border-border/80 hover:shadow-hover',
+                        'card-accent-hover group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-xl border border-border bg-card p-4 pl-5 text-card-foreground shadow-card hover:-translate-y-0.5 hover:shadow-hover',
                         isSelected && 'border-primary/70 bg-primary/[0.03] ring-2 ring-primary/35'
                       )}
                     >
@@ -367,7 +369,7 @@ export function InventoryGrid({
                               aria-hidden="true"
                             />
                             <span className="text-muted-foreground">Avail:</span>
-                            <span className="font-mono font-semibold text-foreground">
+                            <span className="font-mono font-semibold tabular-nums text-foreground">
                               {`${item.available_qty} / ${item.qty}`}
                             </span>
                           </div>

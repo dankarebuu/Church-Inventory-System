@@ -827,4 +827,37 @@ describe('DashboardPage', () => {
     expect(within(activityPanel).getByText('Legacy_edit')).toBeInTheDocument();
     expect(within(activityPanel).getByText('Recorded legacy_edit action')).toBeInTheDocument();
   });
+
+  it('exposes accessible role="progressbar" attributes on category and equipment-type health bars', async () => {
+    const user = userEvent.setup();
+    renderDashboard({ role: 'guest' });
+
+    const healthPanel = screen.getByTestId('dashboard-category-health');
+    const typeBars = within(healthPanel).getAllByRole('progressbar');
+    expect(typeBars).toHaveLength(3);
+
+    for (const bar of typeBars) {
+      expect(bar).toHaveAttribute('aria-valuemin', '0');
+      expect(bar).toHaveAttribute('aria-valuemax', '100');
+      expect(bar).toHaveAttribute('aria-valuenow');
+    }
+
+    expect(
+      within(healthPanel).getByRole('progressbar', { name: /Instruments health 100%/i })
+    ).toHaveAttribute('aria-valuenow', '100');
+    expect(
+      within(healthPanel).getByRole('progressbar', { name: /DI Boxes & Effects health 0%/i })
+    ).toHaveAttribute('aria-valuenow', '0');
+
+    // Toggle to Rig Categories and verify progressbars there too
+    await user.click(within(healthPanel).getByRole('button', { name: /^rig$/i }));
+    const rigBars = within(healthPanel).getAllByRole('progressbar');
+    expect(rigBars).toHaveLength(3);
+    expect(
+      within(healthPanel).getByRole('progressbar', { name: /Drums health 100%/i })
+    ).toHaveAttribute('aria-valuenow', '100');
+    expect(
+      within(healthPanel).getByRole('progressbar', { name: /Spares & Shared health 0%/i })
+    ).toHaveAttribute('aria-valuenow', '0');
+  });
 });

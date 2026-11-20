@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -988,5 +988,71 @@ describe('InventoryPage', () => {
     } finally {
       onLineSpy.mockRestore();
     }
+  });
+
+  it('renders 36x36 photo thumbnails and ImageOff fallback tiles in Table view, announces filtered counts via aria-live, keeps bulk bar clear of mobile nav, and searches resolved lookup names', async () => {
+    const user = userEvent.setup();
+    const renamedItems: EnrichedInventoryItem[] = [
+      {
+        ...makeSampleItems('admin')[0],
+        category: 'Old Drums Text',
+        category_id: 'cat-drums',
+        location: 'Old Stage Text',
+        location_id: 'loc-stage',
+        equipment_type_id: 'et-inst',
+        equipment_type: 'Old Type Text',
+      },
+      {
+        ...makeSampleItems('admin')[1],
+        equipment_type_id: 'et-cables',
+        equipment_type: null,
+      },
+    ];
+
+    renderInventoryPage('admin', '/inventory', { items: renamedItems });
+
+    // aria-live="polite" region announces filtered count updates without colliding with role="status"
+    const liveRegion = document.querySelector('[aria-live="polite"]');
+    expect(liveRegion).not.toBeNull();
+    expect(liveRegion).toHaveTextContent('2 items (6 units)');
+
+    // Search by resolved category name ('Drums'), resolved equipment type ('Instruments'), and resolved location ('Stage')
+    const searchInput = screen.getByPlaceholderText(/search equipment/i);
+    await user.type(searchInput, 'Drums');
+    expect(screen.getByText('Pearl Brass Snare')).toBeInTheDocument();
+    expect(screen.queryByText('Mogami XLR Cable')).not.toBeInTheDocument();
+    expect(liveRegion).toHaveTextContent('1 item (2 units)');
+
+    await user.clear(searchInput);
+    await user.type(searchInput, 'Instruments');
+    expect(screen.getByText('Pearl Brass Snare')).toBeInTheDocument();
+    expect(screen.queryByText('Mogami XLR Cable')).not.toBeInTheDocument();
+
+    await user.clear(searchInput);
+    await user.type(searchInput, 'Stage');
+    expect(screen.getByText('Pearl Brass Snare')).toBeInTheDocument();
+    expect(screen.queryByText('Mogami XLR Cable')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /clear filters/i }));
+    expect(liveRegion).toHaveTextContent('2 items (6 units)');
+
+    // Switch to Table View and verify 36x36 (size-9) thumbnail + ImageOff fallback tile
+    await user.click(screen.getByRole('button', { name: /table/i }));
+    const table = screen.getByRole('table');
+    const snareThumb = within(table).getByAltText('Pearl Brass Snare thumbnail');
+    expect(snareThumb).toHaveAttribute('src', 'https://cdn.example.com/snare.jpg');
+    expect(snareThumb.parentElement).toHaveClass('size-9');
+    const cableFallback = within(table).getByTestId('table-thumb-fallback-item-cable');
+    expect(cableFallback).toHaveClass('size-9');
+
+    // Broken photo URL gracefully switches to ImageOff fallback tile
+    fireEvent.error(snareThumb);
+    expect(within(table).getByTestId('table-thumb-fallback-item-snare')).toHaveClass('size-9');
+
+    // Sticky bulk-selection bar sits above MobileBottomNav (bottom-20 md:bottom-4)
+    await user.click(screen.getByRole('button', { name: /select items/i }));
+    await user.click(screen.getByRole('button', { name: /select all filtered/i }));
+    const bulkRegion = screen.getByRole('region', { name: /bulk selection actions/i });
+    expect(bulkRegion).toHaveClass('bottom-20', 'md:bottom-4');
   });
 });

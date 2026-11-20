@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import {
   AlertCircle,
   ArrowRight,
@@ -412,19 +412,19 @@ export function CategoriesPage() {
           <TabsList>
             <TabsTrigger value="categories">
               <span>Rig Categories</span>
-              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
                 {categoryTree.length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="locations">
               <span>Storage Locations</span>
-              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
                 {sortedLocations.length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="types">
               <span>Equipment Types</span>
-              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
                 {sortedEquipmentTypes.length}
               </span>
             </TabsTrigger>
@@ -463,7 +463,8 @@ export function CategoriesPage() {
                     <article
                       key={node.id}
                       aria-labelledby={headingId}
-                      className="relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card transition-shadow hover:shadow-hover"
+                      style={{ '--card-accent': swatchColor } as CSSProperties}
+                      className="card-accent-hover relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card hover:-translate-y-0.5 hover:shadow-hover"
                     >
                       <div
                         aria-hidden="true"
@@ -496,11 +497,11 @@ export function CategoriesPage() {
                                   className="inline-block size-2.5 rounded-full border border-border"
                                   style={{ backgroundColor: swatchColor }}
                                 />
-                                <span className="font-mono text-[11px] text-muted-foreground">
+                                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                   {formatItemCountLabel(itemCount)}
                                 </span>
                                 {node.subcategories.length > 0 && (
-                                  <span className="font-mono text-[11px] text-muted-foreground">
+                                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                     · {formatSubcategoryCountLabel(node.subcategories.length)}
                                   </span>
                                 )}
@@ -511,10 +512,13 @@ export function CategoriesPage() {
                           <Link
                             to={`/inventory?category=${encodeURIComponent(node.id)}`}
                             aria-label={`View ${node.name} equipment`}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="group inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <span>Browse</span>
-                            <ArrowRight className="size-3.5" aria-hidden="true" />
+                            <ArrowRight
+                              className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                              aria-hidden="true"
+                            />
                           </Link>
                         </div>
                       </CardHeader>
@@ -550,7 +554,7 @@ export function CategoriesPage() {
                                         aria-hidden="true"
                                       />
                                       <span>{sub.name}</span>
-                                      <span className="font-mono text-[10px] text-muted-foreground">
+                                      <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
                                         ({subCount})
                                       </span>
                                     </Link>
@@ -665,7 +669,10 @@ export function CategoriesPage() {
                   const headingId = `location-card-${loc.id}`;
 
                   return (
-                    <Card key={loc.id} className="flex flex-col justify-between p-0">
+                    <Card
+                      key={loc.id}
+                      className="flex flex-col justify-between p-0 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-hover"
+                    >
                       <article
                         aria-labelledby={headingId}
                         className="flex flex-1 flex-col justify-between"
@@ -686,7 +693,7 @@ export function CategoriesPage() {
                                 >
                                   {loc.name}
                                 </h2>
-                                <Badge variant="secondary" className="mt-1">
+                                <Badge variant="secondary" className="mt-1 tabular-nums">
                                   {formatItemCountLabel(itemCount)}
                                 </Badge>
                               </div>
@@ -695,10 +702,13 @@ export function CategoriesPage() {
                             <Link
                               to={`/inventory?location=${encodeURIComponent(loc.id)}`}
                               aria-label={`View ${loc.name} equipment`}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              className="group inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                               <span>Browse</span>
-                              <ArrowRight className="size-3.5" aria-hidden="true" />
+                              <ArrowRight
+                                className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                                aria-hidden="true"
+                              />
                             </Link>
                           </div>
                         </CardHeader>
@@ -779,7 +789,8 @@ export function CategoriesPage() {
                     <article
                       key={et.id}
                       aria-labelledby={headingId}
-                      className="relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card transition-shadow hover:shadow-hover"
+                      style={{ '--card-accent': swatchColor } as CSSProperties}
+                      className="card-accent-hover relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card hover:-translate-y-0.5 hover:shadow-hover"
                     >
                       <div
                         aria-hidden="true"
@@ -812,7 +823,7 @@ export function CategoriesPage() {
                                   className="inline-block size-2.5 rounded-full border border-border"
                                   style={{ backgroundColor: swatchColor }}
                                 />
-                                <Badge variant="secondary">
+                                <Badge variant="secondary" className="tabular-nums">
                                   {formatItemCountLabel(itemCount)}
                                 </Badge>
                               </div>
@@ -822,10 +833,13 @@ export function CategoriesPage() {
                           <Link
                             to={`/inventory?type=${encodeURIComponent(et.id)}`}
                             aria-label={`View ${et.name} equipment`}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="group inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <span>Browse</span>
-                            <ArrowRight className="size-3.5" aria-hidden="true" />
+                            <ArrowRight
+                              className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                              aria-hidden="true"
+                            />
                           </Link>
                         </div>
                       </CardHeader>

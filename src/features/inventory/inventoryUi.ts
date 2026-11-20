@@ -39,6 +39,7 @@ export interface QuickCheckAction {
   label: string;
   ariaLabel: string;
   icon: LucideIcon;
+  hoverClassName: string;
   activeClassName: string;
 }
 
@@ -48,24 +49,30 @@ export const QUICK_CHECK_ACTIONS: readonly QuickCheckAction[] = [
     label: 'OK',
     ariaLabel: 'OK',
     icon: CheckCircle2,
+    hoverClassName:
+      'hover:border-emerald-500/35 hover:bg-emerald-500/10 hover:text-emerald-700 dark:hover:text-emerald-300',
     activeClassName:
-      'border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+      'border-emerald-500/40 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200',
   },
   {
     condition: 'repair',
     label: 'Fix',
     ariaLabel: 'Fix',
     icon: Wrench,
+    hoverClassName:
+      'hover:border-amber-500/35 hover:bg-amber-500/10 hover:text-amber-800 dark:hover:text-amber-300',
     activeClassName:
-      'border-red-500/40 bg-red-500/15 text-red-700 dark:text-red-300',
+      'border-amber-500/40 bg-amber-500/15 text-amber-800 hover:bg-amber-500/20 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-200',
   },
   {
     condition: 'missing',
     label: 'Lost',
     ariaLabel: 'Lost',
     icon: AlertTriangle,
+    hoverClassName:
+      'hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300',
     activeClassName:
-      'border-red-500/40 bg-red-500/15 text-red-700 dark:text-red-300',
+      'border-red-500/40 bg-red-500/15 text-red-700 hover:bg-red-500/20 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200',
   },
 ];
 

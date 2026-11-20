@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -708,7 +708,7 @@ export function DashboardPage() {
                   to={kpi.to}
                   data-testid={kpi.testId}
                   className={cn(
-                    'group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-card-foreground shadow-card transition-all hover:border-primary/40 hover:shadow-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    'group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-card-foreground shadow-card transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     tone === 'danger' && 'border-red-500/30'
                   )}
                 >
@@ -753,7 +753,7 @@ export function DashboardPage() {
             to="/inventory?stock=low"
             data-testid="dashboard-low-stock"
             className={cn(
-              'group flex flex-col justify-between gap-4 rounded-xl border p-4 shadow-card transition-all sm:flex-row sm:items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'group flex flex-col justify-between gap-4 rounded-xl border p-4 shadow-card transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-0.5 sm:flex-row sm:items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               lowStockItems.length > 0
                 ? 'border-amber-500/40 bg-amber-500/[0.06] hover:border-amber-500/60 hover:shadow-hover'
                 : 'border-border bg-card hover:border-primary/40 hover:shadow-hover'
@@ -813,7 +813,10 @@ export function DashboardPage() {
 
             <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs font-medium text-primary group-hover:underline">
               <span>{lowStockItems.length > 0 ? 'Review Low Stock' : 'Filter Low Stock'}</span>
-              <ArrowRight className="size-3.5" aria-hidden="true" />
+              <ArrowRight
+                className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                aria-hidden="true"
+              />
             </span>
           </Link>
 
@@ -846,10 +849,13 @@ export function DashboardPage() {
 
                 <Link
                   to="/inventory?condition=flagged"
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span>View All</span>
-                  <ArrowRight className="size-3.5" aria-hidden="true" />
+                  <ArrowRight
+                    className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
                 </Link>
               </CardHeader>
 
@@ -883,7 +889,8 @@ export function DashboardPage() {
                         <Link
                           key={item.id}
                           to={`/inventory?item=${encodeURIComponent(item.id)}`}
-                          className="group relative flex items-start justify-between gap-3 overflow-hidden rounded-lg border border-border bg-background/60 p-3 pl-4 transition-colors hover:border-primary/40 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          style={{ '--card-accent': color } as CSSProperties}
+                          className="card-accent-hover group relative flex items-start justify-between gap-3 overflow-hidden rounded-lg border border-border bg-background/60 p-3 pl-4 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <span
                             aria-hidden="true"
@@ -913,10 +920,13 @@ export function DashboardPage() {
                     {flaggedItems.length > MAX_ATTENTION_ITEMS && (
                       <Link
                         to="/inventory?condition=flagged"
-                        className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 font-mono text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="group mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 font-mono text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <span>View all {flaggedItems.length} flagged items</span>
-                        <ArrowRight className="size-3.5" aria-hidden="true" />
+                        <ArrowRight
+                          className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                          aria-hidden="true"
+                        />
                       </Link>
                     )}
                   </div>
@@ -983,10 +993,13 @@ export function DashboardPage() {
 
                   <Link
                     to={healthGroupBy === 'type' ? '/categories?tab=types' : '/categories'}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span>{healthGroupBy === 'type' ? 'Types' : 'Categories'}</span>
-                    <ArrowRight className="size-3.5" aria-hidden="true" />
+                    <ArrowRight
+                      className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    />
                   </Link>
                 </div>
               </CardHeader>
@@ -1031,7 +1044,8 @@ export function DashboardPage() {
                           <Link
                             key={bucket.key}
                             to={`/inventory?${destinationParam}=${encodeURIComponent(bucket.linkParam)}`}
-                            className="group relative flex flex-col justify-between gap-2.5 overflow-hidden rounded-lg border border-border bg-background/60 p-3.5 pl-4 transition-all hover:border-primary/40 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            style={{ '--card-accent': bucket.color } as CSSProperties}
+                            className="card-accent-hover group relative flex flex-col justify-between gap-2.5 overflow-hidden rounded-lg border border-border bg-background/60 p-3.5 pl-4 hover:-translate-y-0.5 hover:bg-accent/50 hover:shadow-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <span
                               aria-hidden="true"
@@ -1051,7 +1065,7 @@ export function DashboardPage() {
                                     {bucket.name}
                                   </p>
                                 </div>
-                                <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                                <p className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">
                                   {formatPluralCount(bucket.itemCount, 'item', 'items')} ·{' '}
                                   {formatPluralCount(bucket.unitCount, 'unit', 'units')}
                                 </p>
@@ -1063,11 +1077,15 @@ export function DashboardPage() {
                             </div>
 
                             <div
+                              role="progressbar"
                               aria-label={`${bucket.name} health ${bucket.itemCount > 0 ? `${bucket.healthPercent}%` : 'empty'}`}
+                              aria-valuenow={barWidth}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
                               className="h-1.5 w-full overflow-hidden rounded-full bg-secondary"
                             >
                               <div
-                                className="h-full rounded-full transition-all duration-300"
+                                className="h-full rounded-full transition-[width] duration-300 ease-out"
                                 style={{
                                   width: `${barWidth}%`,
                                   backgroundColor: bucket.color,
@@ -1076,7 +1094,7 @@ export function DashboardPage() {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-mono text-[11px] text-muted-foreground">
+                              <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                 {bucket.workingCount} working
                               </span>
                               {bucket.flaggedCount > 0 && (
@@ -1124,10 +1142,13 @@ export function DashboardPage() {
 
                   <Link
                     to="/loans"
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span>Manage Loans</span>
-                    <ArrowRight className="size-3.5" aria-hidden="true" />
+                    <ArrowRight
+                      className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    />
                   </Link>
                 </CardHeader>
 
@@ -1204,10 +1225,13 @@ export function DashboardPage() {
                       {sortedActiveLoans.length > MAX_ACTIVE_LOANS && (
                         <Link
                           to="/loans"
-                          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 font-mono text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="group mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 font-mono text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <span>View all {sortedActiveLoans.length} active loans</span>
-                          <ArrowRight className="size-3.5" aria-hidden="true" />
+                          <ArrowRight
+                            className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                            aria-hidden="true"
+                          />
                         </Link>
                       )}
                     </div>
@@ -1237,10 +1261,13 @@ export function DashboardPage() {
 
                   <Link
                     to="/activity"
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span>View Full Log</span>
-                    <ArrowRight className="size-3.5" aria-hidden="true" />
+                    <ArrowRight
+                      className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    />
                   </Link>
                 </CardHeader>
 

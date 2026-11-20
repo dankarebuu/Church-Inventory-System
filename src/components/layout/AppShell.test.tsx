@@ -356,4 +356,17 @@ describe('AppShell', () => {
       localStorage.clear();
     }
   });
+
+  it('provides a Skip to main content link targeting #main-content and bottom clearance for MobileBottomNav', () => {
+    renderShell('guest');
+
+    const skipLink = screen.getByRole('link', { name: /skip to main content/i });
+    expect(skipLink).toHaveAttribute('href', '#main-content');
+    expect(skipLink).toHaveClass('sr-only');
+
+    const main = screen.getByRole('main');
+    expect(main).toHaveAttribute('id', 'main-content');
+    expect(main).toHaveAttribute('tabindex', '-1');
+    expect(main).toHaveClass('pb-24', 'md:pb-6');
+  });
 });

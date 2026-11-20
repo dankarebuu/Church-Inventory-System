@@ -23,6 +23,7 @@ import {
   ChevronsRight,
   Edit2,
   Eye,
+  ImageOff,
   MessageSquare,
   Trash2,
 } from 'lucide-react';
@@ -49,7 +50,7 @@ import {
   getEquipmentTypeColor,
 } from '@/features/equipmentTypes/useEquipmentTypes';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import { cn } from '@/lib/utils';
+import { cn, parseImages } from '@/lib/utils';
 import type {
   Category,
   EquipmentType,
@@ -103,6 +104,46 @@ const columnHelper = createColumnHelper<typeof inventoryTableFeatures, EnrichedI
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
 const EMPTY_COMMENT_COUNTS: Record<string, number> = {};
+
+function TableItemThumbnail({
+  src,
+  itemName,
+  itemId,
+}: {
+  src: string | null;
+  itemName: string;
+  itemId: string;
+}) {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
+  if (!src || hasError) {
+    return (
+      <div
+        aria-hidden="true"
+        data-testid={`table-thumb-fallback-${itemId}`}
+        className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/50 text-muted-foreground/60"
+      >
+        <ImageOff className="size-4" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="img-inset-outline size-9 shrink-0 overflow-hidden rounded-lg bg-secondary/40">
+      <img
+        src={src}
+        alt={`${itemName} thumbnail`}
+        loading="lazy"
+        onError={() => setHasError(true)}
+        className="size-full object-cover"
+      />
+    </div>
+  );
+}
 
 /**
  * Sortable, paginated TanStack Table v9 view for inventory equipment with
@@ -190,16 +231,22 @@ export function InventoryTable({
           cell: ({ row }) => {
             const entry = row.original;
             const accent = getCategoryColor(entry.category, categories, entry.category_id);
+            const firstPhoto = parseImages(entry.image_filename)[0] ?? null;
             const subtitle = [entry.brand, entry.serial ? `SN: ${entry.serial}` : null]
               .filter((part): part is string => Boolean(part && part.trim()))
               .join(' · ');
 
             return (
-              <div className="flex min-w-[190px] items-center gap-2.5">
+              <div className="flex min-w-[220px] items-center gap-2.5">
                 <span
                   aria-hidden="true"
                   className="h-7 w-1 shrink-0 rounded-full"
                   style={{ backgroundColor: accent }}
+                />
+                <TableItemThumbnail
+                  src={firstPhoto}
+                  itemName={entry.item}
+                  itemId={entry.id}
                 />
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-foreground">{entry.item}</p>
@@ -304,7 +351,7 @@ export function InventoryTable({
             const lowStock = isLowStock(entry);
             return (
               <div className="flex flex-wrap items-center gap-1.5 whitespace-nowrap">
-                <span className="font-mono text-xs font-semibold text-foreground">
+                <span className="font-mono text-xs font-semibold tabular-nums text-foreground">
                   {`${entry.available_qty} / ${entry.qty}`}
                 </span>
                 {entry.qty_on_loan > 0 && <Badge variant="loaned">On Loan</Badge>}
@@ -513,7 +560,7 @@ export function InventoryTable({
                     : onSelectItem(row.original)
                 }
                 className={cn(
-                  'cursor-pointer',
+                  'cursor-pointer transition-colors duration-150',
                   isSelected && 'bg-primary/[0.04]'
                 )}
               >
@@ -531,7 +578,7 @@ export function InventoryTable({
       {/* Pagination Footer */}
       <div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="font-mono">
+          <span className="font-mono tabular-nums">
             Showing {startRow}–{endRow} of {totalCount}
           </span>
           <div className="flex items-center gap-1.5">
@@ -555,7 +602,7 @@ export function InventoryTable({
         </div>
 
         <div className="flex items-center justify-between gap-2 sm:justify-end">
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
             Page {currentPageIndex + 1} of {pageCount}
           </span>
           <div className="flex items-center gap-1">

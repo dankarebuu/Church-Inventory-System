@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextValue } from '@/features/auth/useAuth';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
-import type { Category, LocationRecord, UserRole } from '@/types/database';
+import type { Category, EquipmentType, LocationRecord, UserRole } from '@/types/database';
 import { ChecklistPage } from './ChecklistPage';
 
 const mockUseAuth = vi.fn<() => AuthContextValue>();
@@ -18,6 +18,7 @@ const mockUseInventoryItems = vi.fn<(role: UserRole) => {
 }>();
 const mockUseCategories = vi.fn<() => { data: Category[]; isLoading: boolean }>();
 const mockUseLocations = vi.fn<() => { data: LocationRecord[]; isLoading: boolean }>();
+const mockUseEquipmentTypes = vi.fn<() => { data: EquipmentType[]; isLoading: boolean }>();
 const mockMemberCheckItem = vi.fn();
 
 const { mockHtml2PdfSave, mockHtml2PdfFrom, mockHtml2PdfSet, mockHtml2PdfFactory } =
@@ -82,6 +83,16 @@ vi.mock('@/features/locations/useLocations', async () => {
   };
 });
 
+vi.mock('@/features/equipmentTypes/useEquipmentTypes', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/features/equipmentTypes/useEquipmentTypes')
+  >('@/features/equipmentTypes/useEquipmentTypes');
+  return {
+    ...actual,
+    useEquipmentTypes: () => mockUseEquipmentTypes(),
+  };
+});
+
 class MockResizeObserver {
   observe() {}
   unobserve() {}
@@ -139,6 +150,25 @@ const sampleLocations: LocationRecord[] = [
     description: 'Sound Booth',
     sort_order: 20,
     created_at: '2026-11-18T00:00:00.000Z',
+  },
+];
+
+const sampleEquipmentTypes: EquipmentType[] = [
+  {
+    id: 'et-inst',
+    name: 'Instruments',
+    color: '#2563EB',
+    icon: 'guitar',
+    sort_order: 10,
+    created_at: '2026-11-20T00:00:00.000Z',
+  },
+  {
+    id: 'et-mics',
+    name: 'Microphones',
+    color: '#d3554a',
+    icon: 'mic',
+    sort_order: 20,
+    created_at: '2026-11-20T00:00:00.000Z',
   },
 ];
 
@@ -318,6 +348,10 @@ function renderChecklistPage(role: UserRole, initialEntry = '/checklist') {
   });
   mockUseLocations.mockReturnValue({
     data: sampleLocations,
+    isLoading: false,
+  });
+  mockUseEquipmentTypes.mockReturnValue({
+    data: sampleEquipmentTypes,
     isLoading: false,
   });
 
@@ -502,6 +536,8 @@ describe('ChecklistPage', () => {
     expect(refetch).toHaveBeenCalledTimes(1);
     unmount();
 
+    mockUseEquipmentTypes.mockReturnValue({ data: sampleEquipmentTypes, isLoading: false });
+
     // Now render normal guest view and filter Print sheet by Category
     renderChecklistPage('guest');
     await user.click(screen.getByRole('combobox', { name: /filter by category/i }));
@@ -618,6 +654,82 @@ describe('ChecklistPage', () => {
       expect(screen.getByRole('button', { name: /download pdf/i })).toBeEnabled();
     } finally {
       onLineSpy.mockRestore();
+    }
+  });
+
+  it('announces Sunday Check-Off confirmations via aria-live, searches resolved category/type/location names, and sets print pagination rules cleanly', async () => {
+    const user = userEvent.setup();
+    const resolvedItems = makeSampleItems('member').map((entry, idx) =>
+      idx === 0
+        ? {
+            ...entry,
+            category: 'Legacy Cat',
+            category_id: 'cat-drums',
+            location: 'Legacy Loc',
+            location_id: 'loc-stage',
+            equipment_type_id: 'et-inst',
+            equipment_type: null,
+          }
+        : entry
+    );
+
+    mockUseAuth.mockReturnValue(makeAuthValue('member'));
+    mockUseInventoryItems.mockReturnValue({
+      data: resolvedItems,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseCategories.mockReturnValue({ data: sampleCategories, isLoading: false });
+    mockUseLocations.mockReturnValue({ data: sampleLocations, isLoading: false });
+    mockUseEquipmentTypes.mockReturnValue({ data: sampleEquipmentTypes, isLoading: false });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/checklist']}>
+          <Routes>
+            <Route path="/checklist" element={<ChecklistPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    const liveRegion = document.querySelector('[aria-live="polite"]');
+    expect(liveRegion).not.toBeNull();
+
+    const snareCard = screen.getByTestId('checklist-item-item-snare');
+    await user.click(within(snareCard).getByRole('button', { name: /^ok$/i }));
+    await waitFor(() => {
+      expect(liveRegion).toHaveTextContent('Checked "Pearl Brass Snare" as Working.');
+    });
+
+    // Search resolves updated equipment type name ('Instruments'), category ('Drums'), and location ('Stage')
+    const searchInput = screen.getByRole('searchbox', { name: /search checklist items/i });
+    await user.type(searchInput, 'Instruments');
+    expect(screen.getByText('Pearl Brass Snare')).toBeInTheDocument();
+    expect(screen.queryByText('Shure SM58 Mic')).not.toBeInTheDocument();
+
+    // Verify print pagination classes on Print / PDF tab
+    await user.click(screen.getByRole('tab', { name: /print \/ pdf checklist/i }));
+    const printSheet = await screen.findByTestId('checklist-print-sheet');
+    const sections = printSheet.querySelectorAll('section.print-section');
+    expect(sections.length).toBeGreaterThan(0);
+    for (const sec of sections) {
+      expect(sec).not.toHaveClass('break-inside-avoid');
+    }
+    const headings = printSheet.querySelectorAll('section.print-section > div');
+    for (const heading of headings) {
+      expect(heading).toHaveClass('break-after-avoid');
+    }
+    const rows = printSheet.querySelectorAll('tbody tr');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row).toHaveClass('break-inside-avoid');
     }
   });
 });

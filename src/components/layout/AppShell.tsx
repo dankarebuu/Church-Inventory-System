@@ -268,7 +268,7 @@ function SidebarNav({
             aria-label={collapsed ? item.label : undefined}
             className={({ isActive }) =>
               cn(
-                'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-[background-color,color] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 collapsed && 'justify-center px-2',
                 isActive
                   ? 'bg-primary/12 text-primary font-semibold'
@@ -501,11 +501,18 @@ export function AppShell({ children }: { children?: ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
+      <a
+        href="#main-content"
+        className="no-print sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:border focus:border-border focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-foreground focus:shadow-modal focus:outline-none focus:ring-2 focus:ring-ring"
+      >
+        Skip to main content
+      </a>
+
       {/* Desktop Collapsible Sidebar */}
       <aside
         aria-label="Primary sidebar"
         className={cn(
-          'no-print hidden shrink-0 flex-col border-r border-border bg-card transition-[width] duration-200 md:sticky md:top-0 md:flex md:h-screen',
+          'no-print hidden shrink-0 flex-col border-r border-border bg-card transition-[width,background-color,border-color] duration-200 md:sticky md:top-0 md:flex md:h-screen',
           sidebarCollapsed ? 'md:w-[74px]' : 'md:w-64'
         )}
       >
@@ -578,7 +585,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
 
       {/* Main Column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-border bg-topbar px-4 backdrop-blur-md sm:px-6">
+        <header className="no-print sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-border bg-topbar px-4 backdrop-blur-md transition-[background-color,border-color] duration-200 sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <Button
               type="button"
@@ -618,12 +625,26 @@ export function AppShell({ children }: { children?: ReactNode }) {
               onClick={toggleTheme}
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="relative overflow-hidden"
             >
-              {theme === 'dark' ? (
-                <Sun className="size-4" aria-hidden="true" />
-              ) : (
-                <Moon className="size-4" aria-hidden="true" />
-              )}
+              <Sun
+                className={cn(
+                  'size-4 transition-[transform,opacity] duration-200 ease-out',
+                  theme === 'dark'
+                    ? 'rotate-0 scale-100 opacity-100'
+                    : '-rotate-90 scale-75 opacity-0'
+                )}
+                aria-hidden="true"
+              />
+              <Moon
+                className={cn(
+                  'absolute size-4 transition-[transform,opacity] duration-200 ease-out',
+                  theme === 'dark'
+                    ? 'rotate-90 scale-75 opacity-0'
+                    : 'rotate-0 scale-100 opacity-100'
+                )}
+                aria-hidden="true"
+              />
             </Button>
 
             <UserAccountMenu onOpenSettings={() => setSettingsOpen(true)} />
@@ -632,7 +653,11 @@ export function AppShell({ children }: { children?: ReactNode }) {
 
         <OfflineBanner isOffline={isOffline} lastSyncedAt={lastSyncedAt} />
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 px-4 pt-6 pb-24 focus:outline-none sm:px-6 md:pb-6 lg:px-8"
+        >
           {children !== undefined ? children : <Outlet />}
         </main>
 

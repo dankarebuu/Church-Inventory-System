@@ -1,6 +1,7 @@
 import { getCategoryColor } from '@/features/categories/useCategories';
 import {
   resolveCategoryName,
+  resolveEquipmentTypeName,
   resolveLocationName,
   resolveSubcategoryName,
 } from '@/features/inventory/inventoryUi';
@@ -8,6 +9,7 @@ import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { isSameLocalDay } from '@/lib/utils';
 import type {
   Category,
+  EquipmentType,
   ItemCondition,
   LocationRecord,
   PublicInventoryItem,
@@ -26,6 +28,7 @@ export interface ChecklistFilterOptions {
   uncheckedOnly?: boolean;
   categories: readonly Category[];
   locations: readonly LocationRecord[];
+  equipmentTypes?: readonly EquipmentType[];
   referenceDate?: Date;
   includeCheckedByInSearch?: boolean;
 }
@@ -112,6 +115,7 @@ export function filterChecklistItems<T extends EnrichedInventoryItem>(
     uncheckedOnly = false,
     categories,
     locations,
+    equipmentTypes = [],
     referenceDate = new Date(),
     includeCheckedByInSearch = false,
   } = options;
@@ -148,12 +152,19 @@ export function filterChecklistItems<T extends EnrichedInventoryItem>(
     }
 
     if (query) {
+      const categoryName = resolveCategoryName(item, categories);
       const subName = resolveSubcategoryName(item, categories);
+      const typeName = resolveEquipmentTypeName(item, equipmentTypes);
+      const locationName = resolveLocationName(item, locations);
       const parts: Array<string | null | undefined> = [
         item.item,
         item.brand,
+        categoryName,
         item.category,
         subName,
+        typeName,
+        item.equipment_type,
+        locationName === '—' ? null : locationName,
         item.location,
         item.owner,
         item.serial,

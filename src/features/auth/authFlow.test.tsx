@@ -166,6 +166,47 @@ describe('Auth UI flows (WelcomeGateway, AuthModal, AccountSettingsDialog, Reset
     expect(screen.queryByText('Band Inventory')).not.toBeInTheDocument();
   });
 
+  it('uses Radix Dialog accessibility (aria-describedby, focus containment, and Escape dismissal) on WelcomeGateway', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AuthProvider>
+          <Harness />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    const dialog = await screen.findByRole('dialog', { name: /band inventory/i });
+    const labelledById = dialog.getAttribute('aria-labelledby');
+    expect(labelledById).toBeTruthy();
+    expect(document.getElementById(labelledById!)).toHaveTextContent('Band Inventory');
+    const describedById = dialog.getAttribute('aria-describedby');
+    expect(describedById).toBeTruthy();
+    expect(document.getElementById(describedById!)).toHaveTextContent(
+      'Band Department Inventory System'
+    );
+    // Radix modal dialog hides background content from the accessibility tree while open
+    expect(screen.queryByRole('button', { name: 'Trigger Login' })).not.toBeInTheDocument();
+
+    const loginBtn = screen.getByRole('button', { name: /Login to Edit/i });
+    const guestBtn = screen.getByRole('button', { name: /Continue as Guest \(View Only\)/i });
+
+    // Tabbing cycles focus inside the modal rather than escaping to background buttons
+    loginBtn.focus();
+    expect(loginBtn).toHaveFocus();
+    await user.tab();
+    expect(guestBtn).toHaveFocus();
+    await user.tab();
+    expect(loginBtn).toHaveFocus();
+
+    // Pressing Escape dismisses WelcomeGateway and persists session dismissal
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /band inventory/i })).not.toBeInTheDocument();
+    });
+    expect(sessionStorage.getItem('wingmacc_gateway_dismissed')).toBe('true');
+  });
+
   it('auto-hides WelcomeGateway when a user is authenticated', async () => {
     const authUser = makeUser();
     const profile: ProfileRecord = {

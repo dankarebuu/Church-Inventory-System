@@ -75,7 +75,7 @@ export function MobileBottomNav({
               to={item.to}
               className={({ isActive }) =>
                 cn(
-                  'flex min-h-[56px] min-w-0 flex-col items-center justify-center gap-1 px-1 py-1.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                  'flex min-h-[56px] min-w-0 flex-col items-center justify-center gap-1 px-1 py-1.5 text-[11px] font-medium transition-[color,background-color] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                   isActive
                     ? 'text-primary font-semibold'
                     : 'text-muted-foreground hover:text-foreground'
@@ -95,7 +95,7 @@ export function MobileBottomNav({
             aria-expanded={isMoreOpen}
             aria-haspopup="dialog"
             className={cn(
-              'flex min-h-[56px] min-w-0 cursor-pointer flex-col items-center justify-center gap-1 px-1 py-1.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+              'flex min-h-[56px] min-w-0 cursor-pointer flex-col items-center justify-center gap-1 px-1 py-1.5 text-[11px] font-medium transition-[color,background-color] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
               isMoreRouteActive
                 ? 'text-primary font-semibold'
                 : 'text-muted-foreground hover:text-foreground'

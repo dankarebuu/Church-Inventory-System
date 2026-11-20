@@ -70,7 +70,10 @@ import {
 import { InventoryTable } from '@/features/inventory/InventoryTable';
 import {
   isLowStock,
+  resolveCategoryName,
   resolveEquipmentTypeName,
+  resolveLocationName,
+  resolveSubcategoryName,
 } from '@/features/inventory/inventoryUi';
 import { ItemDetailDrawer } from '@/features/inventory/ItemDetailDrawer';
 import { ItemFormDialog } from '@/features/inventory/ItemFormDialog';
@@ -553,16 +556,19 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       }
 
       if (query) {
-        const subName = item.subcategory_id
-          ? categories.find((c) => c.id === item.subcategory_id)?.name ?? ''
-          : '';
-        const typeName = resolveEquipmentTypeName(item, sortedEquipmentTypes) ?? '';
+        const categoryName = resolveCategoryName(item, categories);
+        const subName = resolveSubcategoryName(item, categories);
+        const typeName = resolveEquipmentTypeName(item, sortedEquipmentTypes);
+        const locationName = resolveLocationName(item, sortedLocations);
         const searchableParts = [
           item.item,
           item.brand,
+          categoryName,
           item.category,
           subName,
           typeName,
+          item.equipment_type,
+          locationName === '—' ? null : locationName,
           item.location,
           item.owner,
           item.serial,
@@ -1088,8 +1094,8 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
               <span>Missing Photos</span>
             </Button>
 
-            <div className="flex flex-wrap items-center gap-2 pl-1 font-mono text-muted-foreground">
-              <span>
+            <div className="flex flex-wrap items-center gap-2 pl-1 font-mono tabular-nums text-muted-foreground">
+              <span aria-live="polite" aria-atomic="true">
                 {summaryStats.itemCount} {summaryStats.itemCount === 1 ? 'item' : 'items'} (
                 {summaryStats.totalUnits} {summaryStats.totalUnits === 1 ? 'unit' : 'units'})
               </span>
@@ -1282,9 +1288,9 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
         <div
           role="region"
           aria-label="Bulk selection actions"
-          className="sticky bottom-4 z-20 mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/40 bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md"
+          className="sticky bottom-20 z-20 mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/40 bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md md:bottom-4"
         >
-          <span className="font-mono text-sm font-semibold text-foreground">
+          <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
             {selectedIds.size} selected
           </span>
           <div className="flex items-center gap-2">

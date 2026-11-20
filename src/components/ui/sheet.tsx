@@ -27,21 +27,26 @@ export function SheetOverlay({
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
-      className={cn('fixed inset-0 z-50 bg-black/55 backdrop-blur-xs', className)}
+      className={cn(
+        'fixed inset-0 z-50 bg-black/55 backdrop-blur-xs data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out',
+        className
+      )}
       {...props}
     />
   );
 }
 
 const sheetVariants = cva(
-  'fixed z-50 flex flex-col gap-4 bg-card text-card-foreground shadow-modal transition ease-in-out focus:outline-none',
+  'fixed z-50 flex flex-col gap-4 bg-card text-card-foreground shadow-modal focus:outline-none',
   {
     variants: {
       side: {
-        top: 'inset-x-0 top-0 border-b border-border',
-        bottom: 'inset-x-0 bottom-0 border-t border-border',
-        left: 'inset-y-0 left-0 h-full w-3/4 max-w-sm border-r border-border',
-        right: 'inset-y-0 right-0 h-full w-full max-w-xl border-l border-border',
+        top: 'inset-x-0 top-0 border-b border-border data-[state=open]:animate-sheet-in-top data-[state=closed]:animate-sheet-out-top',
+        bottom:
+          'inset-x-0 bottom-0 border-t border-border data-[state=open]:animate-sheet-in-bottom data-[state=closed]:animate-sheet-out-bottom',
+        left: 'inset-y-0 left-0 h-full w-3/4 max-w-sm border-r border-border data-[state=open]:animate-sheet-in-left data-[state=closed]:animate-sheet-out-left',
+        right:
+          'inset-y-0 right-0 h-full w-full max-w-xl border-l border-border data-[state=open]:animate-sheet-in-right data-[state=closed]:animate-sheet-out-right',
       },
     },
     defaultVariants: {
