@@ -1,0 +1,673 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* =========================================================
+   STEWARD — WIN-GMA EQUIPMENT OPS DESIGN TOKENS
+   Light (:root) and Modern Slate Dark ([data-theme="dark"])
+   ========================================================= */
+:root {
+  /* Surfaces (Clean White Default) */
+  --bg: #F8FAFC;
+  --panel: #FFFFFF;
+  --panel-2: #F1F5F9;
+  --topbar-bg: rgba(255, 255, 255, 0.85);
+
+  /* Lines & Borders */
+  --line: #E2E8F0;
+  --line-focus: #94A3B8;
+  --input-border: #CBD5E1;
+
+  /* Typography */
+  --white: #0F172A;      /* Primary text (Charcoal) */
+  --muted: #475569;      /* Slate-600: >=4.5:1 across card (#FFF) and secondary (#F1F5F9) */
+  --muted-2: #64748B;
+  --sync-text: #334155;
+
+  /* Brand & Status */
+  --amber: #2563EB;
+  --amber-hover: #1D4ED8;
+  --primary-fill: #2563EB;
+  --destructive-fill: #DC2626;
+  --green: #059669;
+  --red: #DC2626;
+  --blue: #1D4ED8;
+  --focus-ring: rgba(37, 99, 235, 0.12);
+
+  /* Elevation */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+
+  /* Scrollbar */
+  --scrollbar-thumb: rgba(100, 116, 139, 0.32);
+  --scrollbar-thumb-hover: rgba(71, 85, 105, 0.54);
+  --scrollbar-thumb-active: var(--amber);
+
+  --radius: 0.75rem;
+}
+
+[data-theme="dark"] {
+  /* Surfaces */
+  --bg: #0B0F17;         /* Deep slate canvas */
+  --panel: #111827;      /* Slate-900 surface for cards */
+  --panel-2: #1E293B;    /* Slate-800 for inputs/secondary */
+  --topbar-bg: rgba(11, 15, 23, 0.85);
+
+  /* Lines & Borders */
+  --line: #1F2937;
+  --line-focus: #374151;
+  --input-border: #334155;
+
+  /* Typography */
+  --white: #F8FAFC;      /* Crisp slate-50 primary text */
+  --muted: #94A3B8;      /* Muted text */
+  --muted-2: #64748B;
+  --sync-text: #CBD5E1;
+
+  /* Brand & Status */
+  --amber: #3B82F6;      /* Electric royal blue (4.84:1 on dark card surfaces) */
+  --amber-hover: #1D4ED8;
+  --primary-fill: #2563EB; /* >=5.1:1 contrast with #FFFFFF button/badge text */
+  --destructive-fill: #DC2626; /* >=4.8:1 contrast with #FFFFFF text */
+  --green: #10B981;
+  --red: #EF4444;
+  --blue: #3B82F6;
+  --focus-ring: rgba(59, 130, 246, 0.25);
+
+  /* Elevation */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+
+  /* Scrollbar */
+  --scrollbar-thumb: rgba(148, 163, 184, 0.26);
+  --scrollbar-thumb-hover: rgba(148, 163, 184, 0.46);
+  --scrollbar-thumb-active: var(--amber);
+}
+
+@theme inline {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-background: var(--bg);
+  --color-foreground: var(--white);
+  --color-card: var(--panel);
+  --color-card-foreground: var(--white);
+  --color-popover: var(--panel);
+  --color-popover-foreground: var(--white);
+  --color-primary: var(--amber);
+  --color-primary-fill: var(--primary-fill);
+  --color-primary-foreground: #FFFFFF;
+  --color-secondary: var(--panel-2);
+  --color-secondary-foreground: var(--white);
+  --color-muted: var(--panel-2);
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--panel-2);
+  --color-accent-foreground: var(--white);
+  --color-destructive: var(--red);
+  --color-destructive-fill: var(--destructive-fill);
+  --color-destructive-foreground: #FFFFFF;
+  --color-border: var(--line);
+  --color-input: var(--input-border);
+  --color-ring: var(--amber);
+
+  --color-success: var(--green);
+  --color-info: var(--blue);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-topbar: var(--topbar-bg);
+  --color-line: var(--line);
+  --color-line-focus: var(--line-focus);
+  --color-sync-text: var(--sync-text);
+  --color-amber: var(--amber);
+  --color-amber-hover: var(--amber-hover);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-hover: var(--shadow-hover);
+  --shadow-modal: var(--shadow-modal);
+
+  --animate-overlay-in: overlay-in 160ms ease-out;
+  --animate-overlay-out: overlay-out 130ms ease-in forwards;
+  --animate-dialog-in: dialog-in 180ms ease-out;
+  --animate-dialog-out: dialog-out 140ms ease-in forwards;
+  --animate-page-in: page-in 210ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-panel-in: panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-sheet-in-right: sheet-in-right 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-sheet-out-right: sheet-out-right 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  --animate-sheet-in-left: sheet-in-left 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-sheet-out-left: sheet-out-left 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  --animate-sheet-in-top: sheet-in-top 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-sheet-out-top: sheet-out-top 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  --animate-sheet-in-bottom: sheet-in-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-sheet-out-bottom: sheet-out-bottom 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dialog-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@keyframes sheet-in-right {
+  from {
+    opacity: 0.4;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes sheet-out-right {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0.4;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes sheet-in-left {
+  from {
+    opacity: 0.4;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes sheet-out-left {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0.4;
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes sheet-in-top {
+  from {
+    opacity: 0.4;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-out-top {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0.4;
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes sheet-in-bottom {
+  from {
+    opacity: 0.4;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-out-bottom {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0.4;
+    transform: translateY(100%);
+  }
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    box-sizing: border-box;
+    border-color: var(--line);
+  }
+
+  html {
+    background: var(--bg);
+    color-scheme: light dark;
+    accent-color: var(--amber);
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: contain;
+    /* Keep keyboard-focused elements clear of the 64px top bar and mobile bottom nav. */
+    scroll-padding-top: 5rem;
+    scroll-padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  :where(*:not(.scrollbar-none)) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: var(--scrollbar-thumb);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-active);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  @media (min-width: 768px) {
+    html {
+      scroll-padding-bottom: 1.5rem;
+    }
+  }
+
+  :root:has(> head > meta[name="color-scheme"][content="light"]),
+  [data-theme="light"] {
+    color-scheme: light;
+  }
+
+  :root:has(> head > meta[name="color-scheme"][content="dark"]),
+  [data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--white);
+    font-family: var(--font-sans);
+    overflow-wrap: break-word;
+    overscroll-behavior-y: contain;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+  }
+
+  @media (pointer: coarse) {
+    input,
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p,
+  li {
+    text-wrap: pretty;
+  }
+
+  :where(code) {
+    overflow-wrap: anywhere;
+  }
+
+  /* Freeze unrelated transitions strictly during synchronous View Transition snapshots. */
+  [data-theme-switching="true"] *,
+  [data-theme-switching="true"] *::before,
+  [data-theme-switching="true"] *::after {
+    transition-duration: 0ms !important;
+  }
+
+  /* Native circular ripple View Transition when switching Light <-> Dark theme. */
+  html[data-theme-transition="ripple"]::view-transition-old(root),
+  html[data-theme-transition="ripple"]::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+
+  html[data-theme-transition="ripple"]::view-transition-new(root) {
+    z-index: 2147483647;
+  }
+
+  /* Graceful cross-fade fallback when View Transitions are unavailable. */
+  @media (prefers-reduced-motion: no-preference) {
+    html[data-theme-transition="fade"],
+    html[data-theme-transition="fade"] body,
+    html[data-theme-transition="fade"] aside,
+    html[data-theme-transition="fade"] header,
+    html[data-theme-transition="fade"] nav,
+    html[data-theme-transition="fade"] main,
+    html[data-theme-transition="fade"] [data-slot="card"],
+    html[data-theme-transition="fade"] [data-slot="badge"],
+    html[data-theme-transition="fade"] [data-slot="button"] {
+      transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+      transition-duration: 240ms;
+      transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+  }
+}
+
+@layer utilities {
+  .surface-transition {
+    transition:
+      background-color 200ms ease,
+      border-color 200ms ease,
+      color 200ms ease,
+      box-shadow 200ms ease;
+  }
+
+  .img-inset-outline {
+    outline: 1px solid rgba(15, 23, 42, 0.08);
+    outline-offset: -1px;
+  }
+
+  [data-theme="dark"] .img-inset-outline {
+    outline-color: rgba(248, 250, 252, 0.12);
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .skeleton-shimmer {
+    background-color: color-mix(in srgb, var(--panel-2) 85%, transparent);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .skeleton-shimmer {
+      background-image: linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in srgb, var(--panel) 60%, transparent) 50%,
+        transparent 100%
+      );
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.6s ease-in-out infinite;
+    }
+
+    .page-enter {
+      animation: var(--animate-page-in);
+    }
+
+    .tab-panel-animate[data-state="active"],
+    .view-switch-enter {
+      animation: var(--animate-panel-in);
+    }
+  }
+
+  .card-accent-hover {
+    transition:
+      background-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      translate 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .card-accent-hover:not([data-selected="true"]):hover {
+      border-color: color-mix(in srgb, var(--card-accent, var(--amber)) 45%, var(--line));
+      box-shadow: var(--shadow-hover);
+      translate: 0 -2px;
+    }
+  }
+
+  @media (hover: none) {
+    .card-accent-hover:hover {
+      --tw-translate-y: 0;
+      translate: none;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .mobile-table-card-cell[data-label]::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 2px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+  }
+
+  /* Horizontal table scrollability edge fade when content extends beyond the scrollport. */
+  .table-scroll-region {
+    --table-fade-start: 0px;
+    --table-fade-end: 0px;
+    scroll-padding-inline: 1.75rem;
+  }
+
+  @supports (animation-timeline: scroll(self inline)) {
+    .table-scroll-region {
+      mask:
+        linear-gradient(black, black) no-clip subtract,
+        linear-gradient(to right, black, transparent) 0 0 / var(--table-fade-start) 100% no-repeat no-clip,
+        linear-gradient(to right, transparent, black) 100% 0 / var(--table-fade-end) 100% no-repeat no-clip;
+      animation: table-reveal-start linear both, table-hide-end linear both;
+      animation-timeline: scroll(self inline);
+      animation-range: 0 2rem, calc(100% - 2rem) 100%;
+    }
+  }
+}
+
+@property --table-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --table-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes table-reveal-start {
+  to {
+    --table-fade-start: 1.75rem;
+  }
+}
+
+@keyframes table-hide-end {
+  from {
+    --table-fade-end: 1.75rem;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid ButtonText !important;
+    outline-offset: 2px;
+  }
+
+  .band {
+    background-color: Highlight !important;
+    forced-color-adjust: none;
+  }
+
+  .skeleton-shimmer {
+    border: 1px solid GrayText !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .skeleton-shimmer,
+  .page-enter,
+  .tab-panel-animate[data-state="active"],
+  .view-switch-enter,
+  [data-slot="dialog-overlay"][data-state="open"],
+  [data-slot="dialog-content"][data-state="open"],
+  [data-slot="sheet-overlay"][data-state="open"],
+  [data-slot="sheet-content"][data-state="open"],
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+
+  .animate-spin {
+    animation-duration: 2s;
+  }
+
+  .card-accent-hover:hover,
+  [class*="hover:-translate-y"]:hover,
+  .group:hover [class*="group-hover:translate-x"] {
+    --tw-translate-x: 0 !important;
+    --tw-translate-y: 0 !important;
+    translate: none !important;
+  }
+
+  [data-slot="button"]:active,
+  [data-slot="tabs-trigger"]:active,
+  [class*="active:scale"]:active {
+    --tw-scale-x: 1 !important;
+    --tw-scale-y: 1 !important;
+    scale: none !important;
+  }
+}
+
+/* ---------- print media rules for checklist export ---------- */
+@media print {
+  html,
+  body {
+    background: white !important;
+    color: black !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .no-print,
+  .print-actions {
+    display: none !important;
+  }
+
+  .print-sheet,
+  .modal-print {
+    position: static !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  .print-table {
+    margin-bottom: 20px;
+  }
+}
