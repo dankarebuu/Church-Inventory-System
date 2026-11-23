@@ -127,7 +127,7 @@ describe('Auth UI flows (WelcomeGateway, AuthModal, AccountSettingsDialog, Reset
     sessionStorage.clear();
   });
 
-  it('renders WelcomeGateway with WINGMACC brand elements and persists guest dismissal across reloads', async () => {
+  it('renders WelcomeGateway with Steward WIN-GMA brand elements and persists guest dismissal across reloads', async () => {
     const user = userEvent.setup();
     const { unmount } = render(
       <MemoryRouter initialEntries={['/dashboard']}>
@@ -138,16 +138,16 @@ describe('Auth UI flows (WelcomeGateway, AuthModal, AccountSettingsDialog, Reset
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Band Inventory')).toBeInTheDocument();
+      expect(screen.getByText('Steward')).toBeInTheDocument();
     });
 
-    const logo = screen.getByAltText('WINGMACC logo');
+    const logo = screen.getByAltText('WIN-GMA logo');
     expect(logo).toHaveAttribute('src', '/images/logo.svg');
-    expect(screen.getByText('CHURCH PROPERTY INVENTORY LOG')).toBeInTheDocument();
+    expect(screen.getByText('WIN-GMA · Equipment Ops')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Continue as Guest \(View Only\)/i }));
 
-    expect(screen.queryByText('Band Inventory')).not.toBeInTheDocument();
+    expect(screen.queryByText('Steward')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('wingmacc_gateway_dismissed')).toBe('true');
 
     unmount();
@@ -163,7 +163,7 @@ describe('Auth UI flows (WelcomeGateway, AuthModal, AccountSettingsDialog, Reset
     await waitFor(() => {
       expect(mockGetSession).toHaveBeenCalledTimes(2);
     });
-    expect(screen.queryByText('Band Inventory')).not.toBeInTheDocument();
+    expect(screen.queryByText('Steward')).not.toBeInTheDocument();
   });
 
   it('uses Radix Dialog accessibility (aria-describedby, focus containment, and Escape dismissal) on WelcomeGateway', async () => {
@@ -176,14 +176,14 @@ describe('Auth UI flows (WelcomeGateway, AuthModal, AccountSettingsDialog, Reset
       </MemoryRouter>
     );
 
-    const dialog = await screen.findByRole('dialog', { name: /band inventory/i });
+    const dialog = await screen.findByRole('dialog', { name: /steward/i });
     const labelledById = dialog.getAttribute('aria-labelledby');
     expect(labelledById).toBeTruthy();
-    expect(document.getElementById(labelledById!)).toHaveTextContent('Band Inventory');
+    expect(document.getElementById(labelledById!)).toHaveTextContent('Steward');
     const describedById = dialog.getAttribute('aria-describedby');
     expect(describedById).toBeTruthy();
     expect(document.getElementById(describedById!)).toHaveTextContent(
-      'Band Department Inventory System'
+      "Winners Through God's Mighty Arm Community Church"
     );
     // Radix modal dialog hides background content from the accessibility tree while open
     expect(screen.queryByRole('button', { name: 'Trigger Login' })).not.toBeInTheDocument();

@@ -4,17 +4,19 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '@/lib/queryKeys';
 import type { HistoryEntry, InventoryItem, UserRole } from '@/types/database';
-import { describeHistoryEntry, useActivityLog } from './useActivityLog';
+import { describeHistoryEntry, HISTORY_FETCH_LIMIT, useActivityLog } from './useActivityLog';
 
 const {
   mockIsConfigured,
   mockAuthState,
   mockFrom,
   tableResults,
+  queueTableResult,
   insertCalls,
   updateCalls,
   updateInCalls,
   orderCalls,
+  limitCalls,
   resetMocks,
 } = vi.hoisted(() => {
   const configured = { value: true };
@@ -31,8 +33,9 @@ const {
     },
   };
 
-  type TableResult = { data: unknown; error: { message: string } | null };
+  type TableResult = { data: unknown; error: { code?: string; message: string } | null };
   const queryMap = new Map<string, TableResult>();
+  const resultQueues = new Map<string, TableResult[]>();
   const inserts: Array<{ table: string; payload: unknown }> = [];
   const updates: Array<{
     table: string;
@@ -47,15 +50,25 @@ const {
     ids: unknown[];
   }> = [];
   const orders: Array<{ table: string; column: string; ascending: boolean }> = [];
+  const limits: Array<{ table: string; limit: number }> = [];
 
   const from = vi.fn((table: string) => {
-    const getResult = (): TableResult => queryMap.get(table) ?? { data: [], error: null };
+    const getResult = (): TableResult => {
+      const queued = resultQueues.get(table);
+      if (queued && queued.length > 0) {
+        return queued.shift()!;
+      }
+      return queryMap.get(table) ?? { data: [], error: null };
+    };
 
     const selectBuilder = {
       order: vi.fn((column: string, opts?: { ascending?: boolean }) => {
         orders.push({ table, column, ascending: opts?.ascending ?? true });
         return {
-          limit: vi.fn(async () => getResult()),
+          limit: vi.fn(async (count: number) => {
+            limits.push({ table, limit: count });
+            return getResult();
+          }),
           then: (
             onFulfilled: (value: TableResult) => unknown,
             onRejected?: (reason: unknown) => unknown
@@ -110,10 +123,16 @@ const {
     mockAuthState: auth,
     mockFrom: from,
     tableResults: queryMap,
+    queueTableResult: (table: string, result: TableResult) => {
+      const existing = resultQueues.get(table) ?? [];
+      existing.push(result);
+      resultQueues.set(table, existing);
+    },
     insertCalls: inserts,
     updateCalls: updates,
     updateInCalls: updatesIn,
     orderCalls: orders,
+    limitCalls: limits,
     resetMocks: () => {
       configured.value = true;
       auth.role = 'admin';
@@ -127,10 +146,12 @@ const {
         created_at: '2026-11-18T00:00:00.000Z',
       };
       queryMap.clear();
+      resultQueues.clear();
       inserts.length = 0;
       updates.length = 0;
       updatesIn.length = 0;
       orders.length = 0;
+      limits.length = 0;
     },
   };
 });
@@ -584,5 +605,90 @@ describe('useActivityLog', () => {
         })
       )
     ).toBe('Recorded activity action');
+  });
+
+  it('undoHistoryEntry retries inventory update with nulled foreign keys on Postgres 23503 error', async () => {
+    mockAuthState.role = 'admin';
+    tableResults.set('history_log', { data: [], error: null });
+    queueTableResult('inventory', {
+      data: null,
+      error: { code: '23503', message: 'insert or update on table "inventory" violates foreign key constraint' },
+    });
+    queueTableResult('inventory', { data: null, error: null });
+    const queryClient = createTestQueryClient();
+
+    const { result } = renderHook(() => useActivityLog(true), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    const entry = makeHistoryEntry({
+      id: 'h_fk_1',
+      action: 'updated',
+      item_id: 'item_fk_1',
+      item_data: {
+        id: 'item_fk_1',
+        category: 'New Cat',
+        category_id: 'cat_new',
+        location_id: 'loc_new',
+      },
+      prev_data: {
+        id: 'item_fk_1',
+        category: 'Old Deleted Cat',
+        category_id: 'cat_deleted',
+        subcategory_id: 'sub_deleted',
+        location_id: 'loc_deleted',
+        equipment_type_id: 'type_deleted',
+      } as Partial<InventoryItem> & Record<string, unknown>,
+    });
+
+    await act(async () => {
+      await result.current.undoHistoryEntry(entry);
+    });
+
+    const invUpdates = updateCalls.filter(
+      (call) => call.table === 'inventory' && call.id === 'item_fk_1'
+    );
+    expect(invUpdates).toHaveLength(2);
+    expect(invUpdates[0]?.payload.category_id).toBe('cat_deleted');
+    expect(invUpdates[1]?.payload).toEqual({
+      category: 'Old Deleted Cat',
+      category_id: null,
+      subcategory_id: null,
+      location_id: null,
+      equipment_type_id: null,
+    });
+  });
+
+  it('useActivityLog exposes hasMore and loadMore to expand the history fetch limit', async () => {
+    mockAuthState.role = 'member';
+    const fullPage = Array.from({ length: HISTORY_FETCH_LIMIT }, (_, idx) =>
+      makeHistoryEntry({ id: `h_${idx}` })
+    );
+    tableResults.set('history_log', { data: fullPage, error: null });
+    const queryClient = createTestQueryClient();
+
+    const { result } = renderHook(() => useActivityLog(true), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.entries).toHaveLength(HISTORY_FETCH_LIMIT);
+    });
+
+    expect(result.current.hasMore).toBe(true);
+    expect(limitCalls.at(-1)?.limit).toBe(HISTORY_FETCH_LIMIT);
+
+    tableResults.set('history_log', { data: [...fullPage, makeHistoryEntry({ id: 'h_extra' })], error: null });
+
+    act(() => {
+      result.current.loadMore();
+    });
+
+    await waitFor(() => {
+      expect(limitCalls.at(-1)?.limit).toBe(HISTORY_FETCH_LIMIT * 2);
+    });
+    await waitFor(() => {
+      expect(result.current.hasMore).toBe(false);
+    });
   });
 });

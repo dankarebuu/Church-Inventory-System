@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +11,7 @@ import {
   loadOfflineSnapshot,
   saveOfflineSnapshot,
 } from '@/lib/offlineCache';
+import { queryKeys } from '@/lib/queryKeys';
 import { AuthProvider, useAuth } from './useAuth';
 
 type AuthStateCallback = (event: AuthChangeEvent, session: Session | null) => void;
@@ -278,30 +280,118 @@ describe('useAuth / AuthProvider', () => {
     expect(mockUnsubscribe).toHaveBeenCalled();
   });
 
-  it('persists wingmacc_theme to localStorage and documentElement[data-theme] on toggleTheme', async () => {
+  it('persists wingmacc_theme to localStorage, meta color-scheme/theme-color, and syncs across storage events', async () => {
+    const user = userEvent.setup();
+    const colorSchemeMeta = document.createElement('meta');
+    colorSchemeMeta.setAttribute('name', 'color-scheme');
+    colorSchemeMeta.setAttribute('content', 'light dark');
+    const themeColorMeta = document.createElement('meta');
+    themeColorMeta.setAttribute('name', 'theme-color');
+    themeColorMeta.setAttribute('content', '#F8FAFC');
+    document.head.append(colorSchemeMeta, themeColorMeta);
+
+    mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
+
+    try {
+      renderWithAuth();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loading')).toHaveTextContent('false');
+      });
+
+      expect(screen.getByTestId('theme')).toHaveTextContent('light');
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+      expect(colorSchemeMeta.getAttribute('content')).toBe('light');
+
+      await user.click(screen.getByRole('button', { name: 'Toggle Theme' }));
+
+      expect(screen.getByTestId('theme')).toHaveTextContent('dark');
+      expect(localStorage.getItem('wingmacc_theme')).toBe('dark');
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+      expect(colorSchemeMeta.getAttribute('content')).toBe('dark');
+      expect(themeColorMeta.getAttribute('content')).toBe('#0B0F17');
+
+      await user.click(screen.getByRole('button', { name: 'Toggle Theme' }));
+
+      expect(screen.getByTestId('theme')).toHaveTextContent('light');
+      expect(localStorage.getItem('wingmacc_theme')).toBe('light');
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+      expect(colorSchemeMeta.getAttribute('content')).toBe('light');
+      expect(themeColorMeta.getAttribute('content')).toBe('#F8FAFC');
+
+      // Syncs when another tab updates wingmacc_theme
+      act(() => {
+        window.dispatchEvent(
+          new StorageEvent('storage', { key: 'wingmacc_theme', newValue: 'dark' })
+        );
+      });
+      expect(screen.getByTestId('theme')).toHaveTextContent('dark');
+    } finally {
+      colorSchemeMeta.remove();
+      themeColorMeta.remove();
+    }
+  });
+
+  it('animates theme toggles with View Transition circular reveal when supported and respects reduced motion', async () => {
     const user = userEvent.setup();
     mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
 
-    renderWithAuth();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    const originalStartVt = (document as { startViewTransition?: unknown }).startViewTransition;
+    const originalAnimate = HTMLElement.prototype.animate;
+    const mockAnimate = vi.fn();
+    let resolveReady!: () => void;
+    let resolveFinished!: () => void;
+    const mockStartViewTransition = vi.fn((cb: () => void) => {
+      cb();
+      return {
+        ready: new Promise<void>((res) => {
+          resolveReady = res;
+        }),
+        finished: new Promise<void>((res) => {
+          resolveFinished = res;
+        }),
+      };
     });
 
-    expect(screen.getByTestId('theme')).toHaveTextContent('light');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    (document as { startViewTransition?: unknown }).startViewTransition = mockStartViewTransition;
+    HTMLElement.prototype.animate = mockAnimate as typeof HTMLElement.prototype.animate;
 
-    await user.click(screen.getByRole('button', { name: 'Toggle Theme' }));
+    try {
+      renderWithAuth();
+      await waitFor(() => {
+        expect(screen.getByTestId('loading')).toHaveTextContent('false');
+      });
 
-    expect(screen.getByTestId('theme')).toHaveTextContent('dark');
-    expect(localStorage.getItem('wingmacc_theme')).toBe('dark');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+      await user.click(screen.getByRole('button', { name: 'Toggle Theme' }));
+      expect(mockStartViewTransition).toHaveBeenCalledTimes(1);
+      expect(document.documentElement.getAttribute('data-theme-transition')).toBe('ripple');
+      expect(screen.getByTestId('theme')).toHaveTextContent('dark');
 
-    await user.click(screen.getByRole('button', { name: 'Toggle Theme' }));
+      await act(async () => {
+        resolveReady();
+        await Promise.resolve();
+      });
+      expect(mockAnimate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clipPath: expect.arrayContaining([expect.stringMatching(/^circle\(0px at /)]),
+        }),
+        expect.objectContaining({
+          pseudoElement: '::view-transition-new(root)',
+          duration: 380,
+        })
+      );
 
-    expect(screen.getByTestId('theme')).toHaveTextContent('light');
-    expect(localStorage.getItem('wingmacc_theme')).toBe('light');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+      await act(async () => {
+        resolveFinished();
+        await Promise.resolve();
+      });
+      expect(document.documentElement.hasAttribute('data-theme-transition')).toBe(false);
+    } finally {
+      (document as { startViewTransition?: unknown }).startViewTransition = originalStartVt;
+      HTMLElement.prototype.animate = originalAnimate;
+      document.documentElement.removeAttribute('data-theme-transition');
+      document.documentElement.removeAttribute('data-theme-switching');
+    }
   });
 
   it('persists gateway dismissal in sessionStorage and supports modal/refreshProfile/signOut actions', async () => {
@@ -736,5 +826,63 @@ describe('useAuth / AuthProvider', () => {
     expect(getActiveOfflineCacheUserId()).toBeNull();
     expect(localStorage.getItem(getOfflineCacheKey('member-offline'))).toBeNull();
     expect(mockSignOut).toHaveBeenNthCalledWith(2, { scope: 'local' });
+  });
+
+  it('clears private TanStack Query caches on signOut and SIGNED_OUT when QueryClientProvider is present', async () => {
+    const user = userEvent.setup();
+    const adminUser = makeUser({ id: 'admin-qc', email: 'admin@wingmacc.org' });
+    const adminProfile: ProfileRecord = {
+      id: 'admin-qc',
+      email: 'admin@wingmacc.org',
+      first_name: 'Dan',
+      last_name: 'Caleb',
+      role: 'admin',
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(queryKeys.inventory('admin'), [{ id: 'item-1', checkedBy: 'Dan' }]);
+    queryClient.setQueryData(queryKeys.loans, [{ id: 'loan-1', borrower_name: 'Joel' }]);
+    queryClient.setQueryData(queryKeys.history, [{ id: 'h-1', user_email: 'admin@wingmacc.org' }]);
+    queryClient.setQueryData(queryKeys.profiles, [adminProfile]);
+    queryClient.setQueryData(queryKeys.itemComments('item-1'), [{ id: 'c-1', body: 'Private note' }]);
+    queryClient.setQueryData(queryKeys.commentCounts, { 'item-1': 1 });
+    queryClient.setQueryData(queryKeys.categories, [{ id: 'cat-1', name: 'Drums' }]);
+
+    mockGetSession.mockResolvedValue({
+      data: { session: makeSession(adminUser) },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({ data: adminProfile, error: null });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/dashboard']}>
+          <AuthProvider>
+            <AuthProbe />
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('admin');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Sign Out' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('guest');
+    });
+
+    expect(queryClient.getQueryData(queryKeys.inventory('admin'))).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.loans)).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.history)).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.profiles)).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.itemComments('item-1'))).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.commentCounts)).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.categories)).toEqual([{ id: 'cat-1', name: 'Drums' }]);
   });
 });

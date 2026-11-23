@@ -406,8 +406,8 @@ describe('ChecklistPage', () => {
     const user = userEvent.setup();
     renderChecklistPage('guest', '/checklist?tab=live');
 
-    // Guest sees Print / PDF tab only; Live Check-Off tab and tap controls are hidden
-    expect(screen.getByRole('tab', { name: /print \/ pdf checklist/i })).toBeInTheDocument();
+    // Guest goes straight to the Print / PDF sheet (no single-tab switcher); Live Check-Off and tap controls are hidden
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /live check-off/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^ok$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^fix$/i })).not.toBeInTheDocument();
@@ -438,7 +438,7 @@ describe('ChecklistPage', () => {
       expect(mockHtml2PdfFactory).toHaveBeenCalledTimes(1);
       expect(mockHtml2PdfSet).toHaveBeenCalledWith(
         expect.objectContaining({
-          filename: expect.stringMatching(/^wingmacc-sunday-checklist-\d{4}-\d{2}-\d{2}\.pdf$/),
+          filename: expect.stringMatching(/^steward-win-gma-sunday-checklist-\d{4}-\d{2}-\d{2}\.pdf$/),
         })
       );
       expect(mockHtml2PdfFrom).toHaveBeenCalledTimes(1);
@@ -575,7 +575,9 @@ describe('ChecklistPage', () => {
       </QueryClientProvider>
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent(/loading sunday checklist/i);
+    const loadingStatus = screen.getByRole('status');
+    expect(loadingStatus).toHaveTextContent(/loading sunday checklist/i);
+    expect(loadingStatus.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
     unmount();
 
     // Live search + Clear Filters

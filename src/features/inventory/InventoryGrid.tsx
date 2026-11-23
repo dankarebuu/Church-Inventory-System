@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
   ChevronDown,
   Edit2,
@@ -68,6 +68,29 @@ interface ItemGroup {
 const EMPTY_EQUIPMENT_TYPES: EquipmentType[] = [];
 const EMPTY_COMMENT_COUNTS: Record<string, number> = {};
 const UNASSIGNED_TYPE_KEY = '__unassigned_type__';
+
+function GridItemThumbnail({ src, itemName }: { src: string; itemName: string }) {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
+  if (hasError) return null;
+
+  return (
+    <div className="img-inset-outline size-11 shrink-0 overflow-hidden rounded-lg bg-secondary/40">
+      <img
+        src={src}
+        alt={`${itemName} thumbnail`}
+        loading="lazy"
+        decoding="async"
+        onError={() => setHasError(true)}
+        className="size-full object-cover"
+      />
+    </div>
+  );
+}
 
 /**
  * Collapsible color-band card grid preserving WINGMACC's `.band` left accent
@@ -231,7 +254,7 @@ export function InventoryGrid({
               <h2 className="font-display text-sm font-semibold uppercase tracking-[0.06em] text-foreground">
                 {group.label}
               </h2>
-              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              <span className="font-sans text-xs tabular-nums text-muted-foreground">
                 ({group.items.length})
               </span>
               <span className="h-px flex-1 bg-border" aria-hidden="true" />
@@ -245,7 +268,7 @@ export function InventoryGrid({
             </button>
 
             {!isCollapsed && (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="view-switch-enter grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {group.items.map((item) => {
                   const conditionMeta = CONDITION_META[item.condition];
                   const categoryName = resolveCategoryName(item, categories);
@@ -281,7 +304,7 @@ export function InventoryGrid({
                           : onSelectItem(item)
                       }
                       className={cn(
-                        'card-accent-hover group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-xl border border-border bg-card p-4 pl-5 text-card-foreground shadow-card hover:-translate-y-0.5 hover:shadow-hover',
+                        'card-accent-hover group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-xl border border-border bg-card p-4 pl-5 text-card-foreground shadow-card',
                         isSelected && 'border-primary/70 bg-primary/[0.03] ring-2 ring-primary/35'
                       )}
                     >
@@ -310,11 +333,28 @@ export function InventoryGrid({
                               </div>
                             )}
 
+                            {photos[0] && (
+                              <GridItemThumbnail src={photos[0]} itemName={item.item} />
+                            )}
+
                             <div className="min-w-0 flex-1">
                               <h3 className="font-display truncate text-base font-semibold leading-snug text-foreground">
-                                {item.item}
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (selectionMode && onToggleSelect) {
+                                      onToggleSelect(item.id);
+                                    } else {
+                                      onSelectItem(item);
+                                    }
+                                  }}
+                                  className="w-full cursor-pointer truncate rounded text-left transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                >
+                                  {item.item}
+                                </button>
                               </h3>
-                              <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                              <p className="mt-0.5 truncate font-sans text-xs tabular-nums text-muted-foreground">
                                 {[
                                   item.brand,
                                   subcategoryName,
@@ -338,7 +378,7 @@ export function InventoryGrid({
                         {(equipmentTypeName || groupBy === 'type') && (
                           <div className="flex flex-wrap items-center gap-1.5">
                             {equipmentTypeName && (
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/60 px-2 py-0.5 font-mono text-[10px] font-medium text-foreground">
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/60 px-2.5 py-0.5 font-sans text-[11px] font-medium text-foreground">
                                 <span
                                   aria-hidden="true"
                                   className="size-1.5 shrink-0 rounded-full"
@@ -350,7 +390,7 @@ export function InventoryGrid({
                               </span>
                             )}
                             {groupBy === 'type' && (
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/70 px-2.5 py-0.5 font-sans text-[11px] text-muted-foreground">
                                 <span
                                   aria-hidden="true"
                                   className="size-1.5 shrink-0 rounded-full"
@@ -369,7 +409,7 @@ export function InventoryGrid({
                               aria-hidden="true"
                             />
                             <span className="text-muted-foreground">Avail:</span>
-                            <span className="font-mono font-semibold tabular-nums text-foreground">
+                            <span className="font-sans font-semibold tabular-nums text-foreground">
                               {`${item.available_qty} / ${item.qty}`}
                             </span>
                           </div>
@@ -406,7 +446,7 @@ export function InventoryGrid({
                         )}
 
                         <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+                          <div className="min-w-0 truncate font-sans text-xs tabular-nums text-muted-foreground">
                             {canCheck && item.checkedBy ? (
                               <span>
                                 Checked {formatLastCheckedDate(item)} · {item.checkedBy}
@@ -420,7 +460,7 @@ export function InventoryGrid({
                             {commentCount > 0 && (
                               <span
                                 aria-label={`${commentCount} ${commentCount === 1 ? 'note' : 'notes'}`}
-                                className="mr-0.5 inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                                className="mr-0.5 inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 font-sans text-[11px] tabular-nums text-muted-foreground"
                               >
                                 <MessageSquare className="size-3" aria-hidden="true" />
                                 <span>{commentCount}</span>
@@ -428,7 +468,7 @@ export function InventoryGrid({
                             )}
 
                             {photos.length > 0 && (
-                              <span className="mr-1 rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                              <span className="mr-1 rounded bg-secondary px-1.5 py-0.5 font-sans text-[11px] tabular-nums text-muted-foreground">
                                 {photos.length} img
                               </span>
                             )}
@@ -437,7 +477,7 @@ export function InventoryGrid({
                               type="button"
                               size="icon"
                               variant="ghost"
-                              className="size-8 text-muted-foreground hover:text-foreground"
+                              className="size-9 text-muted-foreground hover:text-foreground md:size-8"
                               aria-label={`View ${item.item}`}
                               title="View details"
                               onClick={() => onSelectItem(item)}
@@ -451,7 +491,7 @@ export function InventoryGrid({
                                   type="button"
                                   size="icon"
                                   variant="ghost"
-                                  className="size-8 text-muted-foreground hover:text-foreground"
+                                  className="size-9 text-muted-foreground hover:text-foreground md:size-8"
                                   aria-label={`Edit ${item.item}`}
                                   title="Edit item"
                                   disabled={isOffline}
@@ -463,7 +503,7 @@ export function InventoryGrid({
                                   type="button"
                                   size="icon"
                                   variant="ghost"
-                                  className="size-8 text-muted-foreground hover:text-destructive"
+                                  className="size-9 text-muted-foreground hover:text-destructive md:size-8"
                                   aria-label={`Move ${item.item} to Trash`}
                                   title="Move to Trash"
                                   disabled={isOffline}

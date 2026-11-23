@@ -242,9 +242,10 @@ describe('useLocationMutations', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
   });
 
-  it('deletes a location and invalidates categories, locations, and inventory', async () => {
+  it('deletes a location, clears stale inventory location text/FKs, and invalidates categories, locations, and inventory', async () => {
     const queryClient = createTestQueryClient();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+    setResult('inventory:update', { data: null, error: null });
     setResult('locations:delete', { data: null, error: null });
 
     const { result } = renderHook(() => useLocationMutations(), {
@@ -253,6 +254,14 @@ describe('useLocationMutations', () => {
 
     await result.current.deleteLocation('loc-stage');
 
+    expect(updateCalls).toEqual([
+      {
+        table: 'inventory',
+        payload: { location_id: null, location: null },
+        col: 'location_id',
+        id: 'loc-stage',
+      },
+    ]);
     expect(deleteCalls).toEqual([{ table: 'locations', col: 'id', id: 'loc-stage' }]);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.categories });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.locations });

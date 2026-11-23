@@ -1071,10 +1071,10 @@ export function ImportWizardDialog({
               accept=".csv,.json,text/csv,application/json"
               disabled={isImporting}
               onChange={(event) => void handleFileChange(event)}
-              className="cursor-pointer bg-card file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:font-mono file:text-xs file:font-semibold file:text-primary"
+              className="cursor-pointer bg-card file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:font-sans file:text-xs file:font-semibold file:text-primary"
             />
             {selectedFileName && !parseError && (
-              <p className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+              <p className="flex items-center gap-1.5 font-sans text-xs text-muted-foreground">
                 <CheckCircle2 className="size-3.5 text-success" aria-hidden="true" />
                 <span>Loaded {selectedFileName}</span>
               </p>
@@ -1159,7 +1159,7 @@ export function ImportWizardDialog({
 
               {/* Duplicate Handling Mode */}
               <div className="space-y-2">
-                <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Duplicate Handling Mode
                 </p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -1199,11 +1199,11 @@ export function ImportWizardDialog({
               {/* Preview Table */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="font-mono text-[11px] font-semibold uppercase tracking-wider">
+                  <span className="font-sans text-[11px] font-semibold uppercase tracking-wider">
                     Preview
                   </span>
                   {parsedRows.length > PREVIEW_ROW_LIMIT && (
-                    <span className="font-mono text-[11px]">
+                    <span className="font-sans text-[11px] tabular-nums">
                       Showing first {PREVIEW_ROW_LIMIT} of {parsedRows.length} rows
                     </span>
                   )}
@@ -1240,17 +1240,17 @@ export function ImportWizardDialog({
                             <TableCell className="text-xs">
                               {row.category}
                               {row.subcategory && (
-                                <span className="block font-mono text-[10px] text-muted-foreground">
+                                <span className="block font-sans text-[11px] text-muted-foreground">
                                   {row.subcategory}
                                 </span>
                               )}
                               {row.equipment_type && (
-                                <span className="block font-mono text-[10px] text-primary">
+                                <span className="block font-sans text-[11px] font-medium text-primary">
                                   {row.equipment_type}
                                 </span>
                               )}
                             </TableCell>
-                            <TableCell className="font-mono text-xs font-semibold">
+                            <TableCell className="font-sans text-xs font-semibold tabular-nums">
                               {row.qty}
                               {row.min_qty !== null && (
                                 <span className="block text-[10px] font-normal text-muted-foreground">
@@ -1273,7 +1273,7 @@ export function ImportWizardDialog({
                                     {row.borrower}
                                   </span>
                                   {row.returnDate && (
-                                    <span className="block font-mono text-[10px] text-muted-foreground">
+                                    <span className="block font-sans text-[11px] tabular-nums text-muted-foreground">
                                       Due: {row.returnDate}
                                     </span>
                                   )}

@@ -367,4 +367,45 @@ describe('useRealtimeSync', () => {
     });
     expect(result.current.status).toBe('offline');
   });
+
+  it('retries channel subscription after CHANNEL_ERROR and catches up queries upon reconnect', () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    const { result } = renderHook(() => useRealtimeSync('member'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    act(() => {
+      createdChannels[0].subscribeCallback?.('SUBSCRIBED');
+    });
+    expect(result.current.status).toBe('connected');
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      createdChannels[0].subscribeCallback?.('CHANNEL_ERROR');
+    });
+    expect(result.current.status).toBe('error');
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(mockRemoveChannelFn).toHaveBeenCalledWith(createdChannels[0].channelObject);
+    expect(createdChannels).toHaveLength(2);
+    expect(result.current.status).toBe('connecting');
+
+    act(() => {
+      createdChannels[1].subscribeCallback?.('SUBSCRIBED');
+    });
+
+    expect(result.current.status).toBe('connected');
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.inventory('member'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.loans,
+    });
+  });
 });

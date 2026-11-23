@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { User } from '@supabase/supabase-js';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -255,7 +255,8 @@ describe('AppShell', () => {
     await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Open navigation menu' }));
+    expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Open Steward menu' }));
     const drawer = await screen.findByRole('dialog');
     await user.click(within(drawer).getByText('Sunday Checklist'));
 
@@ -334,10 +335,12 @@ describe('AppShell', () => {
       expect(within(guestBottomNav).getByRole('link', { name: 'Inventory' })).toBeInTheDocument();
       expect(within(guestBottomNav).getByRole('link', { name: 'Checklist' })).toBeInTheDocument();
       expect(within(guestBottomNav).getByRole('link', { name: 'Categories' })).toBeInTheDocument();
-      expect(within(guestBottomNav).queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
+      expect(
+        within(guestBottomNav).getByRole('button', { name: 'Open Steward menu' })
+      ).toBeInTheDocument();
       unmount();
 
-      // Back online hides OfflineBanner and shows Staff MobileBottomNav with More opening mobile Sheet
+      // Back online hides OfflineBanner and shows Staff MobileBottomNav with center Steward trigger opening Bottom Sheet
       onLineSpy.mockReturnValue(true);
       renderShell('admin');
       expect(screen.queryByText(/Offline — View-Only Mode/i)).not.toBeInTheDocument();
@@ -346,7 +349,7 @@ describe('AppShell', () => {
       expect(within(staffBottomNav).getByRole('link', { name: 'Loans' })).toBeInTheDocument();
       expect(within(staffBottomNav).queryByRole('link', { name: 'Categories' })).not.toBeInTheDocument();
 
-      await user.click(within(staffBottomNav).getByRole('button', { name: 'More' }));
+      await user.click(within(staffBottomNav).getByRole('button', { name: 'Open Steward menu' }));
       const drawer = await screen.findByRole('dialog');
       expect(within(drawer).getByText('Categories & Locations')).toBeInTheDocument();
       expect(within(drawer).getByText('Activity Log')).toBeInTheDocument();
@@ -367,6 +370,107 @@ describe('AppShell', () => {
     const main = screen.getByRole('main');
     expect(main).toHaveAttribute('id', 'main-content');
     expect(main).toHaveAttribute('tabindex', '-1');
-    expect(main).toHaveClass('pb-24', 'md:pb-6');
+    expect(main).toHaveClass('pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))]', 'md:pb-8');
+    expect(main.querySelector('.page-enter')).not.toBeNull();
+  });
+
+  it('persists sidebar collapse state, updates document.title on route change, and supports "/" shortcut only outside inputs', async () => {
+    const user = userEvent.setup();
+    localStorage.clear();
+
+    const { unmount } = renderShell('guest');
+    expect(document.title).toContain('Dashboard');
+
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(localStorage.getItem('wingmacc:sidebar-collapsed')).toBe('true');
+    unmount();
+
+    // Re-mounting at /inventory restores collapsed sidebar state & updates title
+    renderShell('guest', {}, '/inventory');
+    expect(document.title).toContain('Inventory');
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
+
+    // Clicking SidebarBrand navigates from /inventory back to /dashboard
+    await user.click(screen.getByRole('link', { name: /go to dashboard/i }));
+    expect(screen.getByTestId('current-url')).toHaveTextContent('/dashboard');
+    expect(document.title).toContain('Dashboard');
+
+    // Pressing "/" opens the command palette when focus is not inside an input
+    await user.keyboard('/');
+    const dialog = await screen.findByRole('dialog');
+    const searchInput = within(dialog).getByPlaceholderText(/search band equipment/i);
+    await user.type(searchInput, 'a/b');
+    expect(searchInput).toHaveValue('a/b');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    localStorage.clear();
+  });
+
+  it('renders mobile navigation as a Bottom Sheet with upfront Account & Sync cards, quick actions, and swipe-down dismissal', async () => {
+    const user = userEvent.setup();
+    mockIsConfigured.value = true;
+
+    // Guest sees View Only + Login inside the mobile sheet Account Card via center Steward trigger
+    const { authValue: guestAuth, unmount: unmountGuest } = renderShell('guest');
+    await user.click(screen.getByRole('button', { name: 'Open Steward menu' }));
+    const guestSheet = await screen.findByRole('dialog');
+    const guestAccountCard = within(guestSheet).getByTestId('mobile-sheet-account-card');
+    expect(within(guestAccountCard).getByText('Guest (View Only)')).toBeInTheDocument();
+    await user.click(within(guestAccountCard).getByRole('button', { name: 'Login' }));
+    expect(guestAuth.openAuthModal).toHaveBeenCalledWith('login');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    unmountGuest();
+
+    // Authenticated Admin sees profile card, Account Settings, Sign Out, and can swipe up/down
+    const { authValue: adminAuth } = renderShell('admin');
+    const centerTrigger = screen.getByRole('button', { name: 'Open Steward menu' });
+    fireEvent.pointerDown(centerTrigger, { pointerId: 2, button: 0, clientY: 800 });
+    fireEvent.pointerMove(centerTrigger, { pointerId: 2, clientY: 760 });
+    fireEvent.pointerUp(centerTrigger, { pointerId: 2, clientY: 760 });
+    const adminSheet = await screen.findByRole('dialog');
+    const adminAccountCard = within(adminSheet).getByTestId('mobile-sheet-account-card');
+    expect(within(adminAccountCard).getByText('Dan Caleb')).toBeInTheDocument();
+    expect(within(adminAccountCard).getByText('dan@wingmacc.org')).toBeInTheDocument();
+    expect(within(adminAccountCard).getByText('Admin')).toBeInTheDocument();
+
+    // Swipe down on drag handle past threshold closes the Bottom Sheet
+    const handle = within(adminSheet).getByTestId('mobile-sheet-drag-handle');
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 220 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 220 });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    // Reopen via center Steward button and launch Account Settings
+    const bottomNav = screen.getByRole('navigation', { name: /mobile bottom navigation/i });
+    await user.click(within(bottomNav).getByRole('button', { name: 'Open Steward menu' }));
+    const reopenedSheet = await screen.findByRole('dialog');
+    await user.click(
+      within(within(reopenedSheet).getByTestId('mobile-sheet-account-card')).getByRole('button', {
+        name: 'Account Settings',
+      })
+    );
+    expect(await screen.findByRole('heading', { name: 'Account Settings' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    // Sign Out directly from the Bottom Sheet card
+    await user.click(screen.getByRole('button', { name: 'Open Steward menu' }));
+    const signOutSheet = await screen.findByRole('dialog');
+    await user.click(
+      within(within(signOutSheet).getByTestId('mobile-sheet-account-card')).getByRole('button', {
+        name: 'Sign Out',
+      })
+    );
+    expect(adminAuth.signOut).toHaveBeenCalledTimes(1);
   });
 });

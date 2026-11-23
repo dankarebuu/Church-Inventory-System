@@ -192,8 +192,8 @@ export function EquipmentTypeDialog({
               <p className="font-display truncate text-sm font-semibold text-foreground">
                 {name.trim() || 'Equipment Type Preview'}
               </p>
-              <p className="font-mono text-[11px] text-muted-foreground">
-                {previewColor.toUpperCase()} · {icon}
+              <p className="font-sans text-xs text-muted-foreground">
+                <code className="font-mono">{previewColor.toUpperCase()}</code> · {icon}
                 {sortOrder.trim() ? ` · Order ${sortOrder.trim()}` : ''}
               </p>
             </div>

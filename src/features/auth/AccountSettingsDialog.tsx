@@ -204,8 +204,10 @@ export function AccountSettingsDialog({
               <Label htmlFor="acc-first-name">First Name</Label>
               <Input
                 id="acc-first-name"
+                name="first_name"
                 type="text"
                 autoComplete="given-name"
+                enterKeyHint="next"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 required
@@ -216,8 +218,10 @@ export function AccountSettingsDialog({
               <Label htmlFor="acc-last-name">Last Name</Label>
               <Input
                 id="acc-last-name"
+                name="last_name"
                 type="text"
                 autoComplete="family-name"
+                enterKeyHint="next"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
               />
@@ -228,7 +232,9 @@ export function AccountSettingsDialog({
             <Label htmlFor="acc-new-password">New Password (Optional)</Label>
             <PasswordInput
               id="acc-new-password"
+              name="new_password"
               autoComplete="new-password"
+              enterKeyHint={newPassword.length > 0 ? 'next' : 'done'}
               placeholder="Leave blank to keep current password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
@@ -240,7 +246,9 @@ export function AccountSettingsDialog({
               <Label htmlFor="acc-confirm-password">Confirm New Password</Label>
               <PasswordInput
                 id="acc-confirm-password"
+                name="confirm_password"
                 autoComplete="new-password"
+                enterKeyHint="done"
                 placeholder="Re-enter new password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}

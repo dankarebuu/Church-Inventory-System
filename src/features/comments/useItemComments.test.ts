@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '@/lib/queryKeys';
+import { supabase } from '@/lib/supabase';
 import type { ItemComment, UserRole } from '@/types/database';
 import {
   COMMENT_MAX_LENGTH,
@@ -371,6 +372,69 @@ describe('useCommentCounts', () => {
       expect(result.current.isError).toBe(true);
     });
     expect(result.current.error?.message).toContain('failed to fetch counts');
+  });
+
+  it('uses get_item_comment_counts RPC when available', async () => {
+    const rpcSpy = vi.fn(async () => ({
+      data: [
+        { item_id: 'item_1', comment_count: 4 },
+        { item_id: 'item_2', comment_count: '2' },
+        { item_id: 'item_zero', comment_count: 0 },
+      ],
+      error: null,
+    }));
+    (supabase as { rpc?: unknown }).rpc = rpcSpy;
+
+    try {
+      const queryClient = createTestQueryClient();
+      const { result } = renderHook(() => useCommentCounts(true), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(rpcSpy).toHaveBeenCalledWith('get_item_comment_counts');
+      expect(mockFrom).not.toHaveBeenCalled();
+      expect(result.current.data).toEqual({
+        item_1: 4,
+        item_2: 2,
+      });
+    } finally {
+      delete (supabase as { rpc?: unknown }).rpc;
+    }
+  });
+
+  it('falls back to item_comments select when get_item_comment_counts RPC is missing (PGRST202)', async () => {
+    const rpcSpy = vi.fn(async () => ({
+      data: null,
+      error: { code: 'PGRST202', message: 'Could not find the function public.get_item_comment_counts' },
+    }));
+    (supabase as { rpc?: unknown }).rpc = rpcSpy;
+    setResult('item_comments:select', {
+      data: [{ item_id: 'item_fallback' }, { item_id: 'item_fallback' }],
+      error: null,
+    });
+
+    try {
+      const queryClient = createTestQueryClient();
+      const { result } = renderHook(() => useCommentCounts(true), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(rpcSpy).toHaveBeenCalledWith('get_item_comment_counts');
+      expect(selectCalls).toEqual([{ table: 'item_comments', columns: 'item_id' }]);
+      expect(result.current.data).toEqual({
+        item_fallback: 2,
+      });
+    } finally {
+      delete (supabase as { rpc?: unknown }).rpc;
+    }
   });
 });
 

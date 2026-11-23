@@ -185,7 +185,7 @@ export function BulkAssignDialog({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-primary">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 font-sans text-xs font-semibold tabular-nums text-primary">
               <Layers className="size-3" aria-hidden="true" />
               <span>{selectedLabel}</span>
             </span>

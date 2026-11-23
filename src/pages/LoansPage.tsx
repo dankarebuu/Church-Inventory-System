@@ -16,6 +16,7 @@ import { OfflineNotice } from '@/components/layout/OfflineBanner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { TableRowsSkeleton } from '@/components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -198,7 +199,7 @@ export function LoansPage() {
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-primary">
             Gear Lending
           </span>
           <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -233,7 +234,13 @@ export function LoansPage() {
             aria-hidden="true"
           />
           <Input
+            id="loans-search"
+            name="q"
             type="search"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="Search by item, borrower, contact, or notes..."
@@ -257,7 +264,7 @@ export function LoansPage() {
               {overdueCount > 0 && (
                 <span
                   className={cn(
-                    'rounded-full px-1.5 py-0.5 font-mono text-[10px] font-bold',
+                    'rounded-full px-1.5 py-0.5 font-sans text-[10px] font-bold tabular-nums',
                     overdueOnly
                       ? 'bg-destructive-foreground/20 text-destructive-foreground'
                       : 'bg-destructive/15 text-destructive'
@@ -286,15 +293,7 @@ export function LoansPage() {
 
       {/* Main Content */}
       {isLoading ? (
-        <div
-          role="status"
-          className="flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-8 text-muted-foreground shadow-card"
-        >
-          <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
-          <span className="font-mono text-xs uppercase tracking-wider">
-            Loading equipment loans...
-          </span>
-        </div>
+        <TableRowsSkeleton label="Loading equipment loans..." rows={5} withTabsHeader />
       ) : isError ? (
         <div
           role="alert"
@@ -323,13 +322,13 @@ export function LoansPage() {
           <TabsList>
             <TabsTrigger value="active">
               <span>Active Loans</span>
-              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-sans text-[10px] font-semibold tabular-nums text-muted-foreground">
                 {activeLoans.length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="returned">
               <span>Returned History</span>
-              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-sans text-[10px] font-semibold tabular-nums text-muted-foreground">
                 {returnedLoans.length}
               </span>
             </TabsTrigger>
@@ -371,8 +370,11 @@ export function LoansPage() {
               </div>
             ) : (
               <div className="rounded-xl border border-border bg-card shadow-card">
-                <Table>
-                  <TableHeader>
+                <Table
+                  containerLabel="Active equipment loans"
+                  containerClassName="max-md:overflow-x-visible"
+                >
+                  <TableHeader className="max-md:hidden">
                     <TableRow className="hover:bg-transparent">
                       <TableHead>Equipment</TableHead>
                       <TableHead>Borrower</TableHead>
@@ -382,7 +384,7 @@ export function LoansPage() {
                       <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody className="max-md:block max-md:divide-y max-md:divide-border">
                     {filteredActiveLoans.map((loan) => {
                       const item = itemsById.get(loan.item_id);
                       const itemName = item?.item ?? `Item ${loan.item_id}`;
@@ -395,29 +397,35 @@ export function LoansPage() {
                       return (
                         <TableRow
                           key={loan.id}
-                          className={cn(overdue && 'bg-destructive/5 hover:bg-destructive/10')}
+                          className={cn(
+                            'max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-2.5 max-md:border-0 max-md:px-4 max-md:py-4',
+                            overdue && 'bg-destructive/5 hover:bg-destructive/10'
+                          )}
                         >
-                          <TableCell>
-                            <div className="min-w-[160px]">
+                          <TableCell className="max-md:col-span-2 max-md:p-0">
+                            <div className="min-w-0 md:min-w-[160px]">
                               <Link
                                 to={`/inventory?item=${encodeURIComponent(loan.item_id)}`}
-                                className="font-semibold text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                                className="font-display font-semibold text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded md:font-sans"
                               >
                                 {itemName}
                               </Link>
                               {itemMeta && (
-                                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 font-sans text-xs text-muted-foreground">
                                   {itemMeta}
                                 </p>
                               )}
                             </div>
                           </TableCell>
 
-                          <TableCell>
-                            <div className="min-w-[160px]">
+                          <TableCell
+                            data-label="Borrower"
+                            className="mobile-table-card-cell max-md:p-0"
+                          >
+                            <div className="min-w-0 md:min-w-[160px]">
                               <p className="font-medium text-foreground">{loan.borrower_name}</p>
                               {loan.borrower_contact && (
-                                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 font-sans text-xs tabular-nums text-muted-foreground">
                                   {loan.borrower_contact}
                                 </p>
                               )}
@@ -429,28 +437,37 @@ export function LoansPage() {
                             </div>
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell
+                            data-label="Quantity"
+                            className="mobile-table-card-cell max-md:justify-self-end max-md:p-0 max-md:text-right"
+                          >
                             <Badge variant="loaned">Qty {loan.qty_loaned}</Badge>
                           </TableCell>
 
-                          <TableCell>
-                            <div className="whitespace-nowrap text-xs">
-                              <p className="font-medium text-foreground">
+                          <TableCell
+                            data-label="Checked Out"
+                            className="mobile-table-card-cell max-md:p-0"
+                          >
+                            <div className="text-xs md:whitespace-nowrap">
+                              <p className="font-medium tabular-nums text-foreground">
                                 {formatDisplayDate(loan.checked_out_at)}
                               </p>
                               {loan.checked_out_by && (
-                                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 font-sans text-xs text-muted-foreground">
                                   by {loan.checked_out_by}
                                 </p>
                               )}
                             </div>
                           </TableCell>
 
-                          <TableCell>
-                            <div className="flex flex-wrap items-center gap-1.5 whitespace-nowrap">
+                          <TableCell
+                            data-label="Due Date"
+                            className="mobile-table-card-cell max-md:justify-self-end max-md:p-0 max-md:text-right"
+                          >
+                            <div className="flex flex-wrap items-center gap-1.5 max-md:justify-end md:whitespace-nowrap">
                               <span
                                 className={cn(
-                                  'text-xs font-medium',
+                                  'text-xs font-medium tabular-nums',
                                   overdue ? 'text-destructive font-semibold' : 'text-foreground'
                                 )}
                               >
@@ -460,12 +477,13 @@ export function LoansPage() {
                             </div>
                           </TableCell>
 
-                          <TableCell className="text-right">
+                          <TableCell className="text-right max-md:col-span-2 max-md:mt-0.5 max-md:border-t max-md:border-dashed max-md:border-border max-md:p-0 max-md:pt-2.5 max-md:text-left">
                             {canManageLoans && (
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
+                                className="max-md:w-full"
                                 disabled={isRowReturning || isOffline}
                                 onClick={() => void handleReturnGear(loan)}
                               >
@@ -512,8 +530,11 @@ export function LoansPage() {
               </div>
             ) : (
               <div className="rounded-xl border border-border bg-card shadow-card">
-                <Table>
-                  <TableHeader>
+                <Table
+                  containerLabel="Returned equipment loan history"
+                  containerClassName="max-md:overflow-x-visible"
+                >
+                  <TableHeader className="max-md:hidden">
                     <TableRow className="hover:bg-transparent">
                       <TableHead>Equipment</TableHead>
                       <TableHead>Borrower</TableHead>
@@ -523,7 +544,7 @@ export function LoansPage() {
                       <TableHead className="text-right">Status</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody className="max-md:block max-md:divide-y max-md:divide-border">
                     {filteredReturnedLoans.map((loan) => {
                       const item = itemsById.get(loan.item_id);
                       const itemName = item?.item ?? `Item ${loan.item_id}`;
@@ -532,28 +553,34 @@ export function LoansPage() {
                         .join(' · ');
 
                       return (
-                        <TableRow key={loan.id}>
-                          <TableCell>
-                            <div className="min-w-[160px]">
+                        <TableRow
+                          key={loan.id}
+                          className="max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-2.5 max-md:border-0 max-md:px-4 max-md:py-4"
+                        >
+                          <TableCell className="max-md:col-span-2 max-md:p-0">
+                            <div className="min-w-0 md:min-w-[160px]">
                               <Link
                                 to={`/inventory?item=${encodeURIComponent(loan.item_id)}`}
-                                className="font-semibold text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                                className="font-display font-semibold text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded md:font-sans"
                               >
                                 {itemName}
                               </Link>
                               {itemMeta && (
-                                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 font-sans text-xs text-muted-foreground">
                                   {itemMeta}
                                 </p>
                               )}
                             </div>
                           </TableCell>
 
-                          <TableCell>
-                            <div className="min-w-[160px]">
+                          <TableCell
+                            data-label="Borrower"
+                            className="mobile-table-card-cell max-md:p-0"
+                          >
+                            <div className="min-w-0 md:min-w-[160px]">
                               <p className="font-medium text-foreground">{loan.borrower_name}</p>
                               {loan.borrower_contact && (
-                                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 font-sans text-xs tabular-nums text-muted-foreground">
                                   {loan.borrower_contact}
                                 </p>
                               )}
@@ -565,37 +592,46 @@ export function LoansPage() {
                             </div>
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell
+                            data-label="Quantity"
+                            className="mobile-table-card-cell max-md:justify-self-end max-md:p-0 max-md:text-right"
+                          >
                             <Badge variant="secondary">Qty {loan.qty_loaned}</Badge>
                           </TableCell>
 
-                          <TableCell>
-                            <div className="whitespace-nowrap text-xs">
-                              <p className="font-medium text-foreground">
+                          <TableCell
+                            data-label="Checked Out"
+                            className="mobile-table-card-cell max-md:p-0"
+                          >
+                            <div className="text-xs md:whitespace-nowrap">
+                              <p className="font-medium tabular-nums text-foreground">
                                 {formatDisplayDate(loan.checked_out_at)}
                               </p>
                               {loan.checked_out_by && (
-                                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 font-sans text-xs text-muted-foreground">
                                   by {loan.checked_out_by}
                                 </p>
                               )}
                             </div>
                           </TableCell>
 
-                          <TableCell>
-                            <div className="whitespace-nowrap text-xs">
-                              <p className="font-medium text-foreground">
+                          <TableCell
+                            data-label="Returned"
+                            className="mobile-table-card-cell max-md:justify-self-end max-md:p-0 max-md:text-right"
+                          >
+                            <div className="text-xs md:whitespace-nowrap">
+                              <p className="font-medium tabular-nums text-foreground">
                                 {formatDisplayDate(loan.returned_at)}
                               </p>
                               {loan.returned_by && (
-                                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 font-sans text-xs text-muted-foreground">
                                   by {loan.returned_by}
                                 </p>
                               )}
                             </div>
                           </TableCell>
 
-                          <TableCell className="text-right">
+                          <TableCell className="text-right max-md:col-span-2 max-md:p-0 max-md:text-left">
                             <Badge variant="working">Returned</Badge>
                           </TableCell>
                         </TableRow>

@@ -14,7 +14,8 @@ This runbook upgrades the live Supabase project (`gcplffcftuhjthtcnjjc`) for the
 4. **Netlify Environment Variables & Auth Redirects** — Configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and Supabase password-recovery URLs.
 5. **Phase 2 (`002_phase2_rls_cutover.sql`)** — Replace `<YOUR_ADMIN_EMAIL>` in the SQL Editor and apply strict 3-tier RLS lockdown.
 6. **Phase 3 (`003_predeploy_enhancements.sql`)** — Run the additive pre-deploy enhancements (Equipment Types, `min_qty`, `item_comments`, member photo append) on top of `001` + `002`.
-7. **Build & Deploy `dist/` Zip to Netlify** — Run `npm run build`, zip the contents of `dist/`, and upload to Netlify.
+7. **Phase 4 (`004_predeploy_safety.sql`)** — Run the additive pre-deploy safety guards (category/location delete cleanup triggers, `qty >= active_loans` guard, `profiles` Realtime wiring, host-pinned photo URL validation) on top of `001`–`003`.
+8. **Build & Deploy `dist/` Zip to Netlify** — Run `npm run build`, zip the contents of `dist/`, and upload to Netlify.
 
 ---
 
@@ -117,6 +118,15 @@ Run [003_predeploy_enhancements.sql](migrations/003_predeploy_enhancements.sql) 
    - `anon` gets HTTP `200` on `GET /rest/v1/equipment_types` and `GET /rest/v1/inventory_public`.
    - `anon` gets HTTP `401` / Postgres `42501` (`permission denied`) on `GET /rest/v1/item_comments`.
    - Authenticated **Member** can read/post/edit/delete their own comments (cannot set or toggle `pinned`, which raises `42501`) and append photos (up to 4) via `member_add_item_photo`, while `storage.objects` `UPDATE`/`DELETE` remain `admin`-only.
+
+---
+
+## Phase 4 (`004_predeploy_safety.sql`)
+
+Run [004_predeploy_safety.sql](migrations/004_predeploy_safety.sql) on top of `001`–`003` before deploying:
+
+1. Paste [004_predeploy_safety.sql](migrations/004_predeploy_safety.sql) into the **Supabase Dashboard -> SQL Editor** and run it (additive and idempotent).
+2. Confirms `public.profiles` is included in `supabase_realtime`, category/location deletes clear stale `inventory` text columns, `inventory.qty` cannot drop below active loaned units, `member_add_item_photo` pins URLs to your active Supabase project host, `get_item_comment_counts()` aggregates note counts server-side, and `handle_user_profile_sync()` supports clearing `last_name`.
 
 ---
 

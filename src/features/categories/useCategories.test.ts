@@ -268,17 +268,59 @@ describe('useCategoryMutations', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
   });
 
-  it('deletes a category and invalidates categories, locations, and inventory', async () => {
+  it('deletes a category, resets linked inventory text/FKs, and invalidates categories, locations, and inventory', async () => {
     const queryClient = createTestQueryClient();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+    const drums: Category = {
+      id: 'cat-drums',
+      name: 'Drums',
+      parent_id: null,
+      color: '#d97740',
+      icon: 'drum',
+      sort_order: 10,
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    const snares: Category = {
+      id: 'sub-snare',
+      name: 'Snares',
+      parent_id: 'cat-drums',
+      color: '#d97740',
+      icon: 'drum',
+      sort_order: 10,
+      created_at: '2026-11-18T00:00:00.000Z',
+    };
+    queryClient.setQueryData(queryKeys.categories, [drums, snares]);
     setResult('categories:delete', { data: null, error: null });
+    setResult('inventory:update', { data: null, error: null });
 
     const { result } = renderHook(() => useCategoryMutations(), {
       wrapper: createWrapper(queryClient),
     });
 
+    await result.current.deleteCategory('sub-snare');
+    expect(updateCalls).toEqual([
+      {
+        table: 'inventory',
+        payload: { subcategory_id: null },
+        col: 'subcategory_id',
+        id: 'sub-snare',
+      },
+    ]);
+    expect(deleteCalls).toEqual([{ table: 'categories', col: 'id', id: 'sub-snare' }]);
+
+    updateCalls.length = 0;
+    deleteCalls.length = 0;
+
     await result.current.deleteCategory('cat-drums');
 
+    expect(updateCalls).toEqual([
+      {
+        table: 'inventory',
+        payload: { category_id: null, subcategory_id: null, category: 'Others' },
+        col: 'category_id',
+        id: 'cat-drums',
+      },
+    ]);
     expect(deleteCalls).toEqual([{ table: 'categories', col: 'id', id: 'cat-drums' }]);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.categories });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.locations });

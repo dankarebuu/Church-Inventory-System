@@ -229,12 +229,22 @@ export function useLocationMutations() {
       assertCanMutate();
 
       const locationId = typeof target === 'string' ? target : target.id;
+      const { error: clearError } = await supabase
+        .from('inventory')
+        .update({ location_id: null, location: null })
+        .eq('location_id', locationId);
+
+      if (clearError) {
+        throw new Error(clearError.message);
+      }
+
       const { error } = await supabase
         .from('locations')
         .delete()
         .eq('id', locationId);
 
       if (error) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) });
         throw new Error(error.message);
       }
 

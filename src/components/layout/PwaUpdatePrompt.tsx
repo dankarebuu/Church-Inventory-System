@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { Button } from '@/components/ui/button';
+import { BRAND } from '@/lib/branding';
 
 /**
  * Non-intrusive Service Worker update toast prompting users to reload when a
- * newer production build of WINGMACC Gear is waiting to activate.
+ * newer production build of Steward is waiting to activate.
  */
 export function PwaUpdatePrompt() {
   const {
@@ -42,7 +43,7 @@ export function PwaUpdatePrompt() {
         <div className="min-w-0">
           <p className="font-display text-sm font-semibold text-foreground">Update Ready</p>
           <p className="text-xs text-muted-foreground">
-            A newer version of WINGMACC Gear is available.
+            A newer version of {BRAND.appName} is available.
           </p>
         </div>
       </div>

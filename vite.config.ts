@@ -12,9 +12,10 @@ export default defineConfig({
       registerType: 'prompt',
       includeManifestIcons: false,
       manifest: {
-        name: 'WINGMACC Band Inventory',
-        short_name: 'WINGMACC Gear',
-        description: 'Church Band Department Equipment Inventory, Sunday Checklist & Loan Log',
+        name: 'Steward — WIN-GMA Equipment Ops',
+        short_name: 'Steward',
+        description:
+          "Winners Through God's Mighty Arm Community Church — Equipment Inventory, Sunday Checklist & Loan Ops",
         theme_color: '#2563EB',
         background_color: '#0B0F17',
         display: 'standalone',
@@ -35,6 +36,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globIgnores: ['**/html2pdf-*.js'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/rest\/v1\//, /^\/auth\/v1\//],
         // Explicitly disable runtime caching so Supabase REST/Auth APIs are never cached by SW.

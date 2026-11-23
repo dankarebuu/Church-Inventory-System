@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { BRAND } from '@/lib/branding';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { PasswordInput } from './PasswordInput';
 import { useAuth, type AuthModalMode } from './useAuth';
@@ -28,11 +29,11 @@ type AuthErrorState =
 const MODE_COPY: Record<AuthModalMode, { title: string; description: string }> = {
   login: {
     title: 'Account Login',
-    description: 'Sign in with your WINGMACC team account to check off gear and manage loans.',
+    description: `Sign in with your ${BRAND.churchShortName} team account to check off gear and manage loans.`,
   },
   signup: {
     title: 'Create Account',
-    description: 'Register a band team account with your name and email address.',
+    description: `Register a ${BRAND.churchShortName} ministry team account with your name and email address.`,
   },
   forgot: {
     title: 'Reset Password',
@@ -270,13 +271,14 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
             </p>
             <div className="mt-2.5 inline-flex items-center gap-2 rounded-lg border border-primary/50 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-foreground">
               <ShieldCheck className="size-4 shrink-0 text-primary" />
-              <span>Contact Admin: Dan Caleb</span>
+              <span>Contact Admin: {BRAND.adminContact}</span>
             </div>
           </div>
         )}
 
         {errorState?.kind === 'message' && (
           <div
+            id="auth-error-alert"
             role="alert"
             className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
           >
@@ -302,11 +304,15 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 <Label htmlFor="auth-first-name">First Name</Label>
                 <Input
                   id="auth-first-name"
+                  name="first_name"
                   type="text"
                   autoComplete="given-name"
+                  enterKeyHint="next"
                   placeholder="e.g. Dan"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
+                  aria-invalid={errorState?.kind === 'message' ? true : undefined}
+                  aria-describedby={errorState?.kind === 'message' ? 'auth-error-alert' : undefined}
                   required
                 />
               </div>
@@ -314,11 +320,15 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 <Label htmlFor="auth-last-name">Last Name</Label>
                 <Input
                   id="auth-last-name"
+                  name="last_name"
                   type="text"
                   autoComplete="family-name"
+                  enterKeyHint="next"
                   placeholder="e.g. Caleb"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
+                  aria-invalid={errorState?.kind === 'message' ? true : undefined}
+                  aria-describedby={errorState?.kind === 'message' ? 'auth-error-alert' : undefined}
                   required
                 />
               </div>
@@ -329,11 +339,19 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
             <Label htmlFor="auth-email">Email Address</Label>
             <Input
               id="auth-email"
+              name="email"
               type="email"
+              inputMode="email"
               autoComplete="email"
-              placeholder="you@wingmacc.org"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint={authModalMode === 'forgot' ? 'send' : 'next'}
+              placeholder="you@church.org"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              aria-invalid={errorState?.kind === 'message' ? true : undefined}
+              aria-describedby={errorState?.kind === 'message' ? 'auth-error-alert' : undefined}
               required
             />
           </div>
@@ -354,12 +372,16 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               </div>
               <PasswordInput
                 id="auth-password"
+                name="password"
                 autoComplete={authModalMode === 'signup' ? 'new-password' : 'current-password'}
+                enterKeyHint="done"
                 placeholder={
                   authModalMode === 'signup' ? 'Minimum 6 characters' : 'Enter your password'
                 }
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={errorState?.kind === 'message' ? true : undefined}
+                aria-describedby={errorState?.kind === 'message' ? 'auth-error-alert' : undefined}
                 required
               />
             </div>

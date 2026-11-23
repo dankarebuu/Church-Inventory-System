@@ -1,10 +1,11 @@
 import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
+import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { PwaUpdatePrompt } from '@/components/layout/PwaUpdatePrompt';
+import { PageShellSkeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthModal } from '@/features/auth/AuthModal';
 import { AuthProvider } from '@/features/auth/useAuth';
@@ -37,22 +38,19 @@ const TeamPage = lazy(() =>
 
 function RouteLoadingFallback() {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-busy="true"
-      className="flex min-h-[40vh] items-center justify-center p-6"
-    >
-      <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card">
-        <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
-        <span>Loading view...</span>
-      </div>
+    <div className="p-2 sm:p-0">
+      <PageShellSkeleton label="Loading view..." />
     </div>
   );
 }
 
 function LazyRoute({ children }: { children: ReactNode }) {
-  return <Suspense fallback={<RouteLoadingFallback />}>{children}</Suspense>;
+  const location = useLocation();
+  return (
+    <ErrorBoundary resetKey={`${location.pathname}${location.search}`}>
+      <Suspense fallback={<RouteLoadingFallback />}>{children}</Suspense>
+    </ErrorBoundary>
+  );
 }
 
 export function createAppQueryClient(): QueryClient {
@@ -160,13 +158,15 @@ export function App({ queryClient: providedQueryClient }: { queryClient?: QueryC
   const queryClient = providedQueryClient ?? defaultQueryClient;
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

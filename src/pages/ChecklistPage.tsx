@@ -16,6 +16,7 @@ import {
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { OfflineNotice } from '@/components/layout/OfflineBanner';
+import { BRAND } from '@/lib/branding';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -28,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ChecklistSkeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/features/auth/useAuth';
 import { sortCategories, useCategories } from '@/features/categories/useCategories';
@@ -104,7 +106,7 @@ function ChecklistProgressCard({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-primary">
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-primary">
                 Checked Today
               </span>
               {allChecked && (
@@ -114,7 +116,7 @@ function ChecklistProgressCard({
             <p className="mt-1 tabular-nums text-sm font-medium text-foreground">
               {progress.checked} of {progress.total} items checked today
             </p>
-            <p className="font-mono text-[11px] text-muted-foreground">
+            <p className="font-sans text-xs tabular-nums text-muted-foreground">
               {formatChecklistPrintDate()}
             </p>
           </div>
@@ -139,7 +141,7 @@ function ChecklistProgressCard({
             </Badge>
           )}
           {hasActiveFilters && (
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+            <span className="font-sans text-xs tabular-nums text-muted-foreground">
               Showing {filteredCount} of {totalCount} items
             </span>
           )}
@@ -199,7 +201,13 @@ function ChecklistCategoryLocationControls({
               aria-hidden="true"
             />
             <Input
+              id="checklist-search"
+              name="q"
               type="search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               value={searchQuery}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Search equipment, brand, serial, or remarks..."
@@ -336,7 +344,7 @@ function LiveChecklistGroups({
               <h2 className="font-display text-sm font-semibold uppercase tracking-[0.06em] text-foreground">
                 {group.label}
               </h2>
-              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              <span className="font-sans text-xs tabular-nums text-muted-foreground">
                 ({checkedInGroup}/{group.items.length} checked)
               </span>
               <span className="h-px flex-1 bg-border" aria-hidden="true" />
@@ -355,7 +363,7 @@ function LiveChecklistGroups({
                     key={item.id}
                     data-testid={`checklist-item-${item.id}`}
                     className={cn(
-                      'relative flex flex-col justify-between overflow-hidden rounded-xl border bg-card p-4 pl-5 shadow-card transition-colors',
+                      'card-accent-hover relative flex flex-col justify-between overflow-hidden rounded-xl border bg-card p-4 pl-5 shadow-card',
                       checkedToday ? 'border-emerald-500/35' : 'border-border'
                     )}
                   >
@@ -371,7 +379,7 @@ function LiveChecklistGroups({
                           <h3 className="font-display text-base font-semibold leading-snug text-foreground">
                             {item.item}
                           </h3>
-                          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                          <p className="mt-0.5 truncate font-sans text-xs tabular-nums text-muted-foreground">
                             {[
                               item.brand,
                               subcategoryName,
@@ -412,7 +420,7 @@ function LiveChecklistGroups({
                             aria-hidden="true"
                           />
                           <span className="text-muted-foreground">Avail:</span>
-                          <span className="font-mono font-semibold tabular-nums text-foreground">
+                          <span className="font-sans font-semibold tabular-nums text-foreground">
                             {`${item.available_qty} / ${item.qty}`}
                           </span>
                         </div>
@@ -444,7 +452,7 @@ function LiveChecklistGroups({
                         size="checklist"
                       />
 
-                      <p className="truncate font-mono text-[11px] text-muted-foreground">
+                      <p className="truncate font-sans text-xs tabular-nums text-muted-foreground">
                         {item.checkedBy || item.dateChecked || item.checked_at
                           ? `Last check: ${formatLastCheckedDate(item)}${
                               item.checkedBy ? ` · ${item.checkedBy}` : ''
@@ -482,26 +490,29 @@ function PrintChecklistSheet({
     <div
       ref={sheetRef}
       data-testid="checklist-print-sheet"
-      className="print-sheet rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-6 text-[#0f172a] shadow-[0_1px_3px_rgba(0,0,0,0.05)] sm:p-8"
+      className="print-sheet rounded-xl border border-[#e2e8f0] bg-[#ffffff] p-4 text-[#0f172a] shadow-[0_1px_3px_rgba(0,0,0,0.05)] sm:p-8"
     >
       <div className="mb-6 flex flex-col gap-4 border-b-2 border-[#0f172a] pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-center gap-3">
           <img
             src="/images/logo.svg"
-            alt="WINGMACC logo"
+            alt={BRAND.logoAlt}
             className="size-10 shrink-0 rounded-lg border border-[#e2e8f0] bg-[#ffffff] p-1"
           />
           <div>
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-[#475569]">
-              WINGMACC Band Inventory
+            <p className="font-sans text-[11px] font-semibold uppercase tracking-[0.08em] text-[#475569]">
+              {BRAND.fullTitle}
             </p>
             <h2 className="font-display text-2xl font-bold tracking-tight text-[#0f172a]">
               Sunday Equipment Checklist
             </h2>
+            <p className="font-sans text-[11px] text-[#475569]">
+              {BRAND.churchFullName} · {BRAND.churchTagline}
+            </p>
           </div>
         </div>
 
-        <div className="text-left font-mono text-xs text-[#334155] sm:text-right">
+        <div className="text-left font-sans text-xs tabular-nums text-[#334155] sm:text-right">
           <p className="font-semibold text-[#0f172a]">{formatChecklistPrintDate()}</p>
           <p>
             {filterSummary} · {totalItems} {totalItems === 1 ? 'item' : 'items'} · {totalUnits}{' '}
@@ -530,21 +541,33 @@ function PrintChecklistSheet({
                 <h3 className="font-display text-sm font-bold uppercase tracking-wider text-[#0f172a]">
                   {group.label}
                 </h3>
-                <span className="font-mono text-xs text-[#475569]">
+                <span className="font-sans text-xs tabular-nums text-[#475569]">
                   ({group.items.length})
                 </span>
               </div>
 
+              <figure
+                tabIndex={0}
+                role="region"
+                aria-label={`${group.label} printable checklist`}
+                className="table-scroll-region m-0 overflow-x-auto overscroll-x-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring print:overflow-visible"
+              >
               <table className="print-table w-full border-collapse text-left text-xs">
                 <thead>
                   <tr className="border-b border-[#cbd5e1] bg-[#f1f5f9] text-[11px] font-semibold uppercase tracking-wide text-[#1e293b]">
-                    <th className="w-8 px-2 py-2" aria-label="Checked box" />
-                    <th className="px-2 py-2">Equipment</th>
-                    <th className="px-2 py-2">Brand</th>
-                    <th className="w-14 px-2 py-2 text-center">Qty</th>
-                    <th className="px-2 py-2">Location</th>
-                    <th className="px-2 py-2">Owner</th>
-                    <th className="px-2 py-2">Status</th>
+                    <th scope="col" className="w-8 px-1.5 py-2 sm:px-2" aria-label="Checked box" />
+                    <th scope="col" className="px-1.5 py-2 sm:px-2">Equipment</th>
+                    <th scope="col" className="hidden px-2 py-2 sm:table-cell print:table-cell">
+                      Brand
+                    </th>
+                    <th scope="col" className="w-12 px-1.5 py-2 text-center sm:w-14 sm:px-2">
+                      Qty
+                    </th>
+                    <th scope="col" className="px-1.5 py-2 sm:px-2">Location</th>
+                    <th scope="col" className="hidden px-2 py-2 sm:table-cell print:table-cell">
+                      Owner
+                    </th>
+                    <th scope="col" className="px-1.5 py-2 sm:px-2">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -559,34 +582,41 @@ function PrintChecklistSheet({
 
                     return (
                       <tr key={entry.id} className="border-b border-[#e2e8f0] break-inside-avoid">
-                        <td className="px-2 py-2 align-middle">
+                        <td className="px-1.5 py-2 align-middle sm:px-2">
                           <span
                             aria-hidden="true"
                             className="inline-block size-4 rounded-[2px] border-[1.5px] border-[#64748b]"
                           />
                         </td>
-                        <td className="px-2 py-2 align-middle">
+                        <td className="px-1.5 py-2 align-middle sm:px-2">
                           <span className="font-semibold text-[#0f172a]">{entry.item}</span>
                           {subline && (
-                            <span className="block font-mono text-[10px] text-[#475569]">
+                            <span className="block font-sans text-[11px] tabular-nums text-[#475569]">
                               {subline}
                             </span>
                           )}
                         </td>
-                        <td className="px-2 py-2 align-middle text-[#1e293b]">
+                        <td className="hidden px-2 py-2 align-middle text-[#1e293b] sm:table-cell print:table-cell">
                           {entry.brand ?? '—'}
                         </td>
-                        <td className="px-2 py-2 text-center align-middle font-mono font-semibold tabular-nums text-[#0f172a]">
+                        <td className="px-1.5 py-2 text-center align-middle font-sans font-semibold tabular-nums text-[#0f172a] sm:px-2">
                           {entry.qty}
                         </td>
-                        <td className="px-2 py-2 align-middle text-[#1e293b]">
+                        <td className="px-1.5 py-2 align-middle text-[#1e293b] sm:px-2">
                           {entry.locationName}
                         </td>
-                        <td className="px-2 py-2 align-middle text-[#1e293b]">
+                        <td className="hidden px-2 py-2 align-middle text-[#1e293b] sm:table-cell print:table-cell">
                           {entry.owner ?? '—'}
                         </td>
-                        <td className="px-2 py-2 align-middle font-mono text-[11px] text-[#1e293b]">
-                          <span>{statusLabel}</span>
+                        <td className="px-1.5 py-2 align-middle font-sans text-[11px] font-medium text-[#1e293b] sm:px-2">
+                          <span
+                            className={cn(
+                              entry.condition === 'missing' && 'font-bold text-[#b91c1c]',
+                              entry.condition === 'repair' && 'font-bold text-[#b45309]'
+                            )}
+                          >
+                            {statusLabel}
+                          </span>
                           {entry.qtyOnLoan > 0 && (
                             <span className="block text-[10px] text-[#475569]">
                               {entry.qtyOnLoan} on loan
@@ -598,6 +628,7 @@ function PrintChecklistSheet({
                   })}
                 </tbody>
               </table>
+              </figure>
             </section>
           ))}
         </div>
@@ -606,13 +637,13 @@ function PrintChecklistSheet({
       <div className="print-signature mt-10 grid grid-cols-1 gap-8 break-inside-avoid sm:grid-cols-2 sm:gap-12">
         <div className="text-center">
           <div className="mb-2 h-8 border-b border-[#0f172a]" />
-          <p className="font-mono text-[11px] uppercase tracking-wider text-[#334155]">
+          <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-[#334155]">
             Checked By (Signature over Printed Name)
           </p>
         </div>
         <div className="text-center">
           <div className="mb-2 h-8 border-b border-[#0f172a]" />
-          <p className="font-mono text-[11px] uppercase tracking-wider text-[#334155]">
+          <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-[#334155]">
             Date &amp; Time
           </p>
         </div>
@@ -834,7 +865,7 @@ export function ChecklistPage() {
         throw new Error('PDF generator failed to initialize.');
       }
 
-      const filename = `wingmacc-sunday-checklist-${formatLocalYmd()}.pdf`;
+      const filename = `${BRAND.filePrefix}-sunday-checklist-${formatLocalYmd()}.pdf`;
       await html2pdf()
         .set({
           margin: 10,
@@ -860,7 +891,7 @@ export function ChecklistPage() {
     <section className="mx-auto max-w-6xl space-y-6">
       <div className="no-print flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-primary">
             Sunday Ops
           </span>
           <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -875,15 +906,7 @@ export function ChecklistPage() {
       </div>
 
       {isLoading && items.length === 0 ? (
-        <div
-          role="status"
-          className="no-print flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-8 text-muted-foreground shadow-card"
-        >
-          <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
-          <span className="font-mono text-xs uppercase tracking-wider">
-            Loading Sunday checklist...
-          </span>
-        </div>
+        <ChecklistSkeleton label="Loading Sunday checklist..." />
       ) : isError ? (
         <div
           role="alert"
@@ -907,18 +930,20 @@ export function ChecklistPage() {
         </div>
       ) : (
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
+          {/* A single-tab bar is just noise (and duplicates the Print button) —
+              only show the switcher when there is something to switch between. */}
+          {canCheck && (
           <TabsList className="no-print">
-            {canCheck && (
-              <TabsTrigger value="live">
-                <ClipboardCheck className="size-4" aria-hidden="true" />
-                <span>Live Check-Off</span>
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="live">
+              <ClipboardCheck className="size-4" aria-hidden="true" />
+              <span>Live Check-Off</span>
+            </TabsTrigger>
             <TabsTrigger value="print">
               <Printer className="size-4" aria-hidden="true" />
               <span>Print / PDF Checklist</span>
             </TabsTrigger>
           </TabsList>
+          )}
 
           {canCheck && (
             <TabsContent value="live" className="no-print space-y-5">

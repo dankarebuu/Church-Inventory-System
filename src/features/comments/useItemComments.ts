@@ -84,7 +84,32 @@ async function fetchItemComments(itemId: string): Promise<ItemComment[]> {
   return sortItemComments(data ?? []);
 }
 
+function isMissingRpcFunctionError(error: { code?: string; message?: string }): boolean {
+  if (error.code === 'PGRST202' || error.code === '42883') return true;
+  return typeof error.message === 'string' && /could not find the function/i.test(error.message);
+}
+
 async function fetchCommentCounts(): Promise<Record<string, number>> {
+  if (typeof supabase.rpc === 'function') {
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_item_comment_counts');
+    if (!rpcError && Array.isArray(rpcData)) {
+      const counts: Record<string, number> = {};
+      for (const row of rpcData) {
+        if (typeof row.item_id === 'string' && row.item_id.length > 0) {
+          const parsedCount = Number(row.comment_count);
+          if (Number.isFinite(parsedCount) && parsedCount > 0) {
+            counts[row.item_id] = parsedCount;
+          }
+        }
+      }
+      return counts;
+    }
+
+    if (rpcError && !isMissingRpcFunctionError(rpcError)) {
+      throw new Error(rpcError.message);
+    }
+  }
+
   const { data, error } = await supabase
     .from('item_comments')
     .select('item_id');

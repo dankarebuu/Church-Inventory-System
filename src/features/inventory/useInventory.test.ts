@@ -1318,4 +1318,49 @@ describe('useItemMutations', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.inventory('admin') });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.history });
   });
+
+  it('rejects reducing inventory qty below active loaned units and cleans up uploaded photos', async () => {
+    mockAuthState.role = 'admin';
+    const queryClient = createTestQueryClient();
+
+    mockStorageBucket.upload.mockResolvedValue({ error: null });
+    mockStorageBucket.getPublicUrl.mockImplementation((path: string) => ({
+      data: { publicUrl: `https://cdn.example.com/gear-photos/${path}` },
+    }));
+    mockStorageBucket.remove.mockResolvedValue({ data: [], error: null });
+
+    tableQueries.set('loans', {
+      data: [{ qty_loaned: 2 }, { qty_loaned: 1 }],
+      error: null,
+    });
+
+    const { result } = renderHook(() => useItemMutations(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(
+      result.current.saveItem({
+        existingItem: makeInventoryItem({ id: 'item_loaned', qty: 4 }),
+        newPhotoFiles: [new File(['img'], 'extra.png', { type: 'image/png' })],
+        values: {
+          item: 'Wireless Mic',
+          category: 'In-Ear Monitors',
+          category_id: 'cat-iem',
+          subcategory_id: null,
+          brand: 'Shure',
+          qty: 2,
+          condition: 'working',
+          owner: 'Church Property',
+          location: 'Stage',
+          location_id: 'loc-stage',
+          serial: '',
+          description: '',
+          remarks: '',
+        },
+      })
+    ).rejects.toThrow(/currently on loan/i);
+
+    expect(updateCalls).toHaveLength(0);
+    expect(mockStorageBucket.remove).toHaveBeenCalledTimes(1);
+  });
 });

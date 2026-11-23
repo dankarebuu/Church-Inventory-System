@@ -464,12 +464,47 @@ export function useCategoryMutations() {
       assertCanMutate();
 
       const categoryId = typeof target === 'string' ? target : target.id;
+      const allCategories = await queryClient.ensureQueryData({
+        queryKey: queryKeys.categories,
+        queryFn: fetchCategories,
+      });
+      const existing = allCategories.find((cat) => cat.id === categoryId);
+
+      if (!existing || existing.parent_id === null) {
+        const fallbackName =
+          existing && existing.name.trim().toLowerCase() === 'others'
+            ? 'Uncategorized'
+            : 'Others';
+        const { error: clearTopError } = await supabase
+          .from('inventory')
+          .update({
+            category_id: null,
+            subcategory_id: null,
+            category: fallbackName,
+          })
+          .eq('category_id', categoryId);
+
+        if (clearTopError) {
+          throw new Error(clearTopError.message);
+        }
+      } else {
+        const { error: clearSubError } = await supabase
+          .from('inventory')
+          .update({ subcategory_id: null })
+          .eq('subcategory_id', categoryId);
+
+        if (clearSubError) {
+          throw new Error(clearSubError.message);
+        }
+      }
+
       const { error } = await supabase
         .from('categories')
         .delete()
         .eq('id', categoryId);
 
       if (error) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.inventory(role) });
         throw new Error(error.message);
       }
 

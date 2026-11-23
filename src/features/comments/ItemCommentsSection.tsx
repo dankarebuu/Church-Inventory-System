@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { FeedListSkeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/features/auth/useAuth';
 import { cn, formatDisplayDate, getInitials } from '@/lib/utils';
@@ -132,7 +133,7 @@ function TagSelector({
             aria-pressed={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              'inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'inline-flex items-center rounded-full border px-2.5 py-0.5 font-sans text-[11px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               active
                 ? meta.activeButtonClasses
                 : 'border-border bg-secondary/40 text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -299,11 +300,11 @@ export function ItemCommentsSection({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3 className="font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Notes & Maintenance Log
         </h3>
         {comments.length > 0 && (
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="font-sans text-xs tabular-nums text-muted-foreground">
             {comments.length} {comments.length === 1 ? 'note' : 'notes'}
           </span>
         )}
@@ -330,7 +331,7 @@ export function ItemCommentsSection({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label
             htmlFor={composerId}
-            className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            className="font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
           >
             Add a Note
           </label>
@@ -344,7 +345,9 @@ export function ItemCommentsSection({
 
         <Textarea
           id={composerId}
+          name="note"
           aria-label="Add a note"
+          enterKeyHint="send"
           value={draftBody}
           onChange={(event) => {
             setDraftBody(event.target.value);
@@ -359,7 +362,7 @@ export function ItemCommentsSection({
           maxLength={COMMENT_MAX_LENGTH}
           disabled={isOffline || isAdding}
           placeholder="Add a setup tip, repair update, or condition observation..."
-          className="min-h-[76px] resize-y bg-card text-sm"
+          className="min-h-[76px] resize-y bg-card"
         />
 
         {composerError && (
@@ -369,11 +372,11 @@ export function ItemCommentsSection({
         )}
 
         <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="font-sans text-xs tabular-nums text-muted-foreground">
             {draftBody.length} / {COMMENT_MAX_LENGTH}
           </span>
           <div className="flex items-center gap-2">
-            <span className="hidden font-mono text-[10px] text-muted-foreground sm:inline">
+            <span className="hidden font-sans text-[11px] text-muted-foreground sm:inline">
               Ctrl+Enter to post
             </span>
             <Button type="submit" size="sm" disabled={!canSubmitDraft}>
@@ -390,13 +393,7 @@ export function ItemCommentsSection({
 
       {/* Notes Feed */}
       {isLoading ? (
-        <div
-          role="status"
-          className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground"
-        >
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          <span>Loading notes...</span>
-        </div>
+        <FeedListSkeleton label="Loading notes..." rows={2} compact />
       ) : isError ? (
         <div
           role="alert"
@@ -449,7 +446,7 @@ export function ItemCommentsSection({
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span
                       aria-hidden="true"
-                      className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[11px] font-semibold text-foreground"
+                      className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary font-display text-[11px] font-semibold text-foreground"
                     >
                       {getInitials(comment.author_name)}
                     </span>
@@ -460,20 +457,20 @@ export function ItemCommentsSection({
                         </span>
                         <span
                           className={cn(
-                            'inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider',
+                            'inline-flex items-center rounded-full border px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider',
                             tagMeta.badgeClasses
                           )}
                         >
                           {tagMeta.label}
                         </span>
                         {comment.pinned && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-primary">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider text-primary">
                             <Pin className="size-2.5" aria-hidden="true" />
                             <span>Pinned</span>
                           </span>
                         )}
                       </div>
-                      <p className="font-mono text-[11px] text-muted-foreground">
+                      <p className="font-sans text-xs tabular-nums text-muted-foreground">
                         {formatCommentTimestamp(comment.created_at)}
                         {wasEdited(comment) ? ' · edited' : ''}
                       </p>
@@ -574,7 +571,7 @@ export function ItemCommentsSection({
                       </p>
                     )}
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[11px] text-muted-foreground">
+                      <span className="font-sans text-xs tabular-nums text-muted-foreground">
                         {editBody.length} / {COMMENT_MAX_LENGTH}
                       </span>
                       <div className="flex items-center gap-2">
@@ -650,7 +647,7 @@ export function ItemCommentsSection({
                 event.preventDefault();
                 void handleConfirmDelete();
               }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive-fill text-destructive-foreground hover:bg-destructive-fill/90"
             >
               {isDeleting ? 'Deleting...' : 'Delete Note'}
             </AlertDialogAction>

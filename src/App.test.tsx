@@ -112,7 +112,7 @@ describe('App & AppRoutes', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('Band Inventory', { selector: 'h1' })).toBeInTheDocument();
+      expect(screen.getByText('Steward', { selector: 'h1' })).toBeInTheDocument();
     });
     expect(screen.getByLabelText('Primary sidebar')).toBeInTheDocument();
   });
@@ -230,10 +230,12 @@ describe('App & AppRoutes', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Sunday Checklist' })).toBeInTheDocument();
-      expect(screen.getByRole('tab', { name: /print \/ pdf checklist/i })).toBeInTheDocument();
+      expect(screen.getByText('Sunday Equipment Checklist')).toBeInTheDocument();
     }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/checklist');
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /live check-off/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /download pdf/i })).toBeInTheDocument();
   });
 
   it('lazy-loads /inventory and /categories routes cleanly inside AppShell', async () => {
@@ -252,7 +254,7 @@ describe('App & AppRoutes', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Band Inventory' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Equipment Inventory' })).toBeInTheDocument();
     }, LAZY_ROUTE_WAIT_OPTIONS);
     expect(screen.getByTestId('app-pathname')).toHaveTextContent('/inventory');
     unmount();

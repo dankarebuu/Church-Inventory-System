@@ -8,6 +8,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { flushSync } from 'react-dom';
+import { QueryClientContext } from '@tanstack/react-query';
 import type { Session, User } from '@supabase/supabase-js';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -15,6 +17,7 @@ import {
   clearOfflineCache,
   setActiveOfflineCacheUserId,
 } from '@/lib/offlineCache';
+import { clearPrivateQueries } from '@/lib/queryKeys';
 import { supabase } from '@/lib/supabase';
 import type { ProfileRecord, UserRole } from '@/types/database';
 
@@ -30,7 +33,7 @@ export interface AuthContextValue {
   role: UserRole;
   isLoading: boolean;
   theme: ThemeMode;
-  toggleTheme: () => void;
+  toggleTheme: (originOrEvent?: unknown) => void;
   showGateway: boolean;
   dismissGateway: () => void;
   openAuthModal: (mode?: AuthModalMode) => void;
@@ -85,6 +88,12 @@ function persistGatewayDismissed(dismissed: boolean): void {
 function applyDocumentTheme(theme: ThemeMode): void {
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('data-theme', theme);
+    document
+      .querySelector('meta[name="color-scheme"]')
+      ?.setAttribute('content', theme);
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', theme === 'dark' ? '#0B0F17' : '#F8FAFC');
   }
   try {
     if (typeof window !== 'undefined') {
@@ -93,6 +102,55 @@ function applyDocumentTheme(theme: ThemeMode): void {
   } catch {
     // Ignore storage write errors in restricted browser contexts.
   }
+}
+
+interface ViewTransitionLike {
+  ready: Promise<unknown>;
+  finished: Promise<unknown>;
+}
+
+function resolveThemeToggleOrigin(source?: unknown): { x: number; y: number } {
+  if (typeof window === 'undefined') return { x: 0, y: 0 };
+
+  if (source && typeof source === 'object') {
+    const candidate = source as {
+      x?: number;
+      y?: number;
+      clientX?: number;
+      clientY?: number;
+      currentTarget?: { getBoundingClientRect?: () => DOMRect } | null;
+    };
+    if (typeof candidate.x === 'number' && typeof candidate.y === 'number') {
+      return { x: candidate.x, y: candidate.y };
+    }
+    if (
+      typeof candidate.clientX === 'number' &&
+      typeof candidate.clientY === 'number' &&
+      (candidate.clientX > 0 || candidate.clientY > 0)
+    ) {
+      return { x: candidate.clientX, y: candidate.clientY };
+    }
+    const targetRect = candidate.currentTarget?.getBoundingClientRect?.();
+    if (targetRect && targetRect.width > 0 && targetRect.height > 0) {
+      return {
+        x: targetRect.left + targetRect.width / 2,
+        y: targetRect.top + targetRect.height / 2,
+      };
+    }
+  }
+
+  if (typeof document !== 'undefined') {
+    const toggleBtn = document.querySelector<HTMLElement>('[data-theme-toggle]');
+    const rect = toggleBtn?.getBoundingClientRect();
+    if (rect && rect.width > 0 && rect.height > 0) {
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    }
+  }
+
+  return { x: Math.max(window.innerWidth - 72, 0), y: 32 };
 }
 
 type ProfileLookupResult =
@@ -121,6 +179,9 @@ async function fetchProfileRow(userId: string): Promise<ProfileLookupResult> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useContext(QueryClientContext);
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
 
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<ProfileRecord | null>(null);
@@ -135,6 +196,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pendingRecoveryRef = useRef<boolean>(false);
   const userRef = useRef<User | null>(null);
   userRef.current = user;
+  const themeRef = useRef<ThemeMode>(theme);
+  themeRef.current = theme;
+  const themeTransitionSeqRef = useRef<number>(0);
+  const fadeTimeoutRef = useRef<number | null>(null);
   const latestAuthUserRef = useRef<User | null>(null);
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
@@ -142,6 +207,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     applyDocumentTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    return () => {
+      if (fadeTimeoutRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(fadeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== THEME_STORAGE_KEY) return;
+      if (event.newValue === 'dark' || event.newValue === 'light') {
+        setTheme(event.newValue);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   const commitAuthenticatedUser = useCallback(async (nextUser: User, seq: number) => {
     let lookup: ProfileLookupResult;
@@ -210,6 +295,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         clearAllOfflineCaches();
         setActiveOfflineCacheUserId(null);
+        if (queryClientRef.current) {
+          clearPrivateQueries(queryClientRef.current);
+        }
       } else if (!session?.user) {
         pendingRecoveryRef.current = false;
       } else if (event === 'PASSWORD_RECOVERY') {
@@ -241,12 +329,126 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [applySession]);
 
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next: ThemeMode = prev === 'dark' ? 'light' : 'dark';
-      applyDocumentTheme(next);
-      return next;
-    });
+  const toggleTheme = useCallback((originOrEvent?: unknown) => {
+    const nextTheme: ThemeMode = themeRef.current === 'dark' ? 'light' : 'dark';
+    const commitTheme = (syncDom: boolean) => {
+      themeRef.current = nextTheme;
+      applyDocumentTheme(nextTheme);
+      if (syncDom) {
+        flushSync(() => {
+          setTheme(nextTheme);
+        });
+      } else {
+        setTheme(nextTheme);
+      }
+    };
+
+    if (typeof document === 'undefined') {
+      commitTheme(false);
+      return;
+    }
+
+    const root = document.documentElement;
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const transitionSeq = ++themeTransitionSeqRef.current;
+
+    if (fadeTimeoutRef.current !== null && typeof window !== 'undefined') {
+      window.clearTimeout(fadeTimeoutRef.current);
+      fadeTimeoutRef.current = null;
+    }
+
+    const docWithViewTransition = document as Document & {
+      startViewTransition?: (callback: () => void) => ViewTransitionLike;
+    };
+
+    if (!prefersReducedMotion && typeof docWithViewTransition.startViewTransition === 'function') {
+      const origin = resolveThemeToggleOrigin(originOrEvent);
+      const endRadius = Math.hypot(
+        Math.max(origin.x, window.innerWidth - origin.x),
+        Math.max(origin.y, window.innerHeight - origin.y)
+      );
+
+      root.setAttribute('data-theme-transition', 'ripple');
+      root.setAttribute('data-theme-switching', 'true');
+
+      try {
+        const transition = docWithViewTransition.startViewTransition(() => {
+          commitTheme(true);
+        });
+
+        Promise.resolve(transition.ready)
+          .then(() => {
+            if (transitionSeq !== themeTransitionSeqRef.current) return;
+            root.removeAttribute('data-theme-switching');
+            root.animate?.(
+              {
+                clipPath: [
+                  `circle(0px at ${origin.x}px ${origin.y}px)`,
+                  `circle(${endRadius}px at ${origin.x}px ${origin.y}px)`,
+                ],
+              },
+              {
+                duration: 380,
+                easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                pseudoElement: '::view-transition-new(root)',
+              }
+            );
+          })
+          .catch(() => {
+            if (transitionSeq === themeTransitionSeqRef.current) {
+              root.removeAttribute('data-theme-switching');
+            }
+          });
+
+        Promise.resolve(transition.finished)
+          .catch(() => {
+            // Ignore superseded or aborted transitions.
+          })
+          .finally(() => {
+            if (transitionSeq === themeTransitionSeqRef.current) {
+              root.removeAttribute('data-theme-switching');
+              root.removeAttribute('data-theme-transition');
+            }
+          });
+      } catch {
+        root.removeAttribute('data-theme-switching');
+        root.removeAttribute('data-theme-transition');
+        commitTheme(false);
+      }
+      return;
+    }
+
+    if (!prefersReducedMotion) {
+      root.removeAttribute('data-theme-switching');
+      root.setAttribute('data-theme-transition', 'fade');
+      commitTheme(false);
+      if (typeof window !== 'undefined') {
+        fadeTimeoutRef.current = window.setTimeout(() => {
+          if (transitionSeq === themeTransitionSeqRef.current) {
+            root.removeAttribute('data-theme-transition');
+          }
+          fadeTimeoutRef.current = null;
+        }, 260);
+      }
+      return;
+    }
+
+    root.removeAttribute('data-theme-transition');
+    root.setAttribute('data-theme-switching', 'true');
+    commitTheme(false);
+    const clearFlag = () => {
+      if (transitionSeq === themeTransitionSeqRef.current) {
+        root.removeAttribute('data-theme-switching');
+      }
+    };
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(clearFlag));
+    } else {
+      setTimeout(clearFlag, 0);
+    }
   }, []);
 
   const dismissGateway = useCallback(() => {
@@ -293,6 +495,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       clearAllOfflineCaches();
       setActiveOfflineCacheUserId(null);
+      if (queryClientRef.current) {
+        clearPrivateQueries(queryClientRef.current);
+      }
     };
 
     // Purge cached catalog data and scope immediately so sign-out never leaves cached data behind

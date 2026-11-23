@@ -5,6 +5,8 @@ import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import type { UserRole } from '@/types/database';
 
 export const REALTIME_DEBOUNCE_MS = 250;
+const REALTIME_RECONNECT_BASE_MS = 3000;
+const REALTIME_RECONNECT_MAX_MS = 30_000;
 
 export type RealtimeSyncState = 'idle' | 'connecting' | 'connected' | 'offline' | 'error';
 
@@ -89,9 +91,20 @@ function getInitialSyncState(): RealtimeSyncState {
 export function useRealtimeSync(role: UserRole): RealtimeSyncStatus {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<RealtimeSyncState>(getInitialSyncState);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const wasDisconnectedRef = useRef(false);
+  const prevRoleRef = useRef<UserRole>(role);
 
   useEffect(() => {
+    if (prevRoleRef.current !== role) {
+      prevRoleRef.current = role;
+      reconnectAttemptRef.current = 0;
+      wasDisconnectedRef.current = false;
+    }
+
     const clearPendingTimers = () => {
       for (const timer of timersRef.current.values()) {
         clearTimeout(timer);
@@ -99,18 +112,27 @@ export function useRealtimeSync(role: UserRole): RealtimeSyncStatus {
       timersRef.current.clear();
     };
 
+    const clearReconnectTimer = () => {
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+
     if (!isSupabaseConfigured) {
       clearPendingTimers();
+      clearReconnectTimer();
       setStatus('offline');
       return;
     }
 
     let isActive = true;
-    setStatus(
-      typeof navigator !== 'undefined' && navigator.onLine === false
-        ? 'offline'
-        : 'connecting'
-    );
+    const isNavigatorOffline =
+      typeof navigator !== 'undefined' && navigator.onLine === false;
+    if (isNavigatorOffline) {
+      wasDisconnectedRef.current = true;
+    }
+    setStatus(isNavigatorOffline ? 'offline' : 'connecting');
 
     const scheduleInvalidation = (queryKey: readonly unknown[]) => {
       if (!isActive) return;
@@ -129,8 +151,38 @@ export function useRealtimeSync(role: UserRole): RealtimeSyncStatus {
       timersRef.current.set(cacheId, nextTimer);
     };
 
-    const channel = supabase.channel(`wingmacc-sync-${role}`);
     const tables = getSubscribedTables(role);
+
+    const invalidateAllSubscribedTables = () => {
+      if (!isActive) return;
+      const seenKeys = new Set<string>();
+      for (const table of tables) {
+        for (const key of getQueryKeysForTable(table, role)) {
+          const cacheId = JSON.stringify(key);
+          if (seenKeys.has(cacheId)) continue;
+          seenKeys.add(cacheId);
+          void queryClient.invalidateQueries({ queryKey: key });
+        }
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (!isActive || reconnectTimerRef.current !== null) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+
+      const delayMs = Math.min(
+        REALTIME_RECONNECT_BASE_MS * 2 ** reconnectAttemptRef.current,
+        REALTIME_RECONNECT_MAX_MS
+      );
+      reconnectAttemptRef.current += 1;
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
+        if (!isActive) return;
+        setReconnectNonce((prev) => prev + 1);
+      }, delayMs);
+    };
+
+    const channel = supabase.channel(`wingmacc-sync-${role}`);
 
     for (const table of tables) {
       channel.on<Record<string, unknown>>(
@@ -147,20 +199,37 @@ export function useRealtimeSync(role: UserRole): RealtimeSyncStatus {
     channel.subscribe((subscribeStatus) => {
       if (!isActive) return;
       if (subscribeStatus === 'SUBSCRIBED') {
+        clearReconnectTimer();
+        reconnectAttemptRef.current = 0;
         setStatus('connected');
+        if (wasDisconnectedRef.current) {
+          wasDisconnectedRef.current = false;
+          invalidateAllSubscribedTables();
+        }
       } else if (subscribeStatus === 'CLOSED') {
+        wasDisconnectedRef.current = true;
         setStatus('offline');
       } else if (subscribeStatus === 'TIMED_OUT' || subscribeStatus === 'CHANNEL_ERROR') {
+        wasDisconnectedRef.current = true;
         setStatus('error');
+        scheduleReconnect();
       }
     });
 
     const handleOffline = () => {
+      wasDisconnectedRef.current = true;
+      clearReconnectTimer();
       if (isActive) setStatus('offline');
     };
 
     const handleOnline = () => {
-      if (isActive) setStatus('connecting');
+      if (!isActive) return;
+      wasDisconnectedRef.current = true;
+      clearReconnectTimer();
+      reconnectAttemptRef.current = 0;
+      setStatus('connecting');
+      invalidateAllSubscribedTables();
+      setReconnectNonce((prev) => prev + 1);
     };
 
     if (typeof window !== 'undefined') {
@@ -171,13 +240,14 @@ export function useRealtimeSync(role: UserRole): RealtimeSyncStatus {
     return () => {
       isActive = false;
       clearPendingTimers();
+      clearReconnectTimer();
       if (typeof window !== 'undefined') {
         window.removeEventListener('offline', handleOffline);
         window.removeEventListener('online', handleOnline);
       }
       void supabase.removeChannel(channel);
     };
-  }, [queryClient, role]);
+  }, [queryClient, role, reconnectNonce]);
 
   const resolvedStatus: RealtimeSyncState = isSupabaseConfigured ? status : 'offline';
   const label =

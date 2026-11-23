@@ -552,6 +552,32 @@ export function useItemMutations() {
       }
 
       const existing = input.existingItem;
+      const { data: activeLoansForItem, error: activeLoansError } = await supabase
+        .from('loans')
+        .select('qty_loaned')
+        .eq('item_id', existing.id)
+        .is('returned_at', null);
+
+      if (activeLoansError) {
+        await cleanupUploadedPaths(uploadedPaths);
+        throw new Error(activeLoansError.message);
+      }
+
+      const activeLoanedQty = (activeLoansForItem ?? []).reduce(
+        (sum, row) =>
+          sum + (Number.isFinite(row.qty_loaned) ? Math.max(row.qty_loaned, 0) : 0),
+        0
+      );
+
+      if (parsed.qty < activeLoanedQty) {
+        await cleanupUploadedPaths(uploadedPaths);
+        throw new Error(
+          `Cannot set quantity to ${parsed.qty} while ${activeLoanedQty} ${
+            activeLoanedQty === 1 ? 'unit is' : 'units are'
+          } currently on loan. Return active loans first.`
+        );
+      }
+
       const conditionChanged = existing.condition !== parsed.condition;
       const updatePayload: InventoryUpdate = {
         ...sharedFields,

@@ -48,6 +48,7 @@ import {
   resolveSubcategoryName,
 } from './inventoryUi';
 import { QuickCheckButtons } from './QuickCheckButtons';
+import { compressImageFile } from './imageCompression';
 import { MAX_GEAR_PHOTOS, validatePhotoFiles } from './schemas';
 import { ZoomLightbox } from './ZoomLightbox';
 
@@ -154,7 +155,15 @@ export function ItemDetailDrawer({
     event.target.value = '';
     if (!file || !activeItem || !canCheck || isOffline || isUploadingPhoto) return;
 
-    const validation = validatePhotoFiles([file], photos.length);
+    if (!file.type || !file.type.toLowerCase().startsWith('image/')) {
+      const msg = `"${file.name}" must be a valid image file.`;
+      setPhotoUploadError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    const preparedFile = await compressImageFile(file);
+    const validation = validatePhotoFiles([preparedFile], photos.length);
     if (!validation.valid) {
       const msg = validation.error ?? 'Invalid photo selection.';
       setPhotoUploadError(msg);
@@ -165,7 +174,7 @@ export function ItemDetailDrawer({
     setPhotoUploadError(null);
     if (!onAddPhoto) return;
     try {
-      await onAddPhoto(activeItem, file);
+      await onAddPhoto(activeItem, preparedFile);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to upload photo.';
       setPhotoUploadError(msg);
@@ -177,7 +186,7 @@ export function ItemDetailDrawer({
       {activeItem && conditionMeta && (
         <SheetContent
           side="right"
-          className="w-full max-w-xl gap-0 overflow-y-auto p-0"
+          className="w-full max-w-xl gap-0 overflow-y-auto overscroll-contain p-0"
           onEscapeKeyDown={(event) => {
             if (lightboxOpen) {
               event.preventDefault();
@@ -195,10 +204,10 @@ export function ItemDetailDrawer({
             style={{ backgroundColor: categoryColor }}
           />
 
-          <SheetHeader className="border-b border-border px-6 py-5 pr-14">
+          <SheetHeader className="border-b border-border px-4 py-4 pr-12 sm:px-6 sm:py-5 sm:pr-14">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/60 px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/60 px-2.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-foreground"
               >
                 <span
                   aria-hidden="true"
@@ -217,11 +226,11 @@ export function ItemDetailDrawer({
             <SheetDescription>
               {[activeItem.brand, activeItem.serial ? `Serial: ${activeItem.serial}` : null]
                 .filter((part): part is string => Boolean(part && part.trim()))
-                .join(' · ') || 'WINGMACC Band Equipment Record'}
+                .join(' · ') || 'Church Equipment Record'}
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex-1 space-y-6 p-6">
+          <div className="flex-1 space-y-6 p-4 sm:p-6">
             {isOffline && canCheck && (
               <OfflineNotice message="Offline read-only mode — condition checks, photos, loans, and edits are paused until connection returns." />
             )}
@@ -239,11 +248,21 @@ export function ItemDetailDrawer({
                     <img
                       src={currentPhoto}
                       alt={`${activeItem.item} photo ${safePhotoIndex + 1}`}
+                      decoding="async"
                       className="h-56 w-full bg-black/5 object-contain dark:bg-black/30"
                     />
                   </button>
 
-                  <div className="pointer-events-none absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-md bg-black/65 px-2 py-1 font-mono text-[10px] font-medium text-white">
+                  {photos.length > 1 && (
+                    <div
+                      aria-label={`Photo ${safePhotoIndex + 1} of ${photos.length}`}
+                      className="pointer-events-none absolute left-2.5 top-2.5 rounded-md bg-black/65 px-2 py-1 font-sans text-[10px] font-medium tabular-nums text-white"
+                    >
+                      {safePhotoIndex + 1} / {photos.length}
+                    </div>
+                  )}
+
+                  <div className="pointer-events-none absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-md bg-black/65 px-2 py-1 font-sans text-[10px] font-medium text-white">
                     <Maximize2 className="size-3" aria-hidden="true" />
                     <span>Zoom</span>
                   </div>
@@ -276,7 +295,7 @@ export function ItemDetailDrawer({
               ) : (
                 <div className="flex h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-secondary/30 text-muted-foreground">
                   <ImageOff className="size-6 opacity-60" aria-hidden="true" />
-                  <span className="font-mono text-xs">No equipment photos uploaded</span>
+                  <span className="font-sans text-xs">No equipment photos uploaded</span>
                 </div>
               )}
 
@@ -308,7 +327,7 @@ export function ItemDetailDrawer({
               {canShowQuickPhoto && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                    <span className="font-sans text-xs tabular-nums text-muted-foreground">
                       {photos.length} / {MAX_GEAR_PHOTOS} photos
                     </span>
                     <Button
@@ -329,7 +348,6 @@ export function ItemDetailDrawer({
                       ref={photoInputRef}
                       type="file"
                       accept="image/*"
-                      capture="environment"
                       className="hidden"
                       aria-label="Take or add equipment photo"
                       disabled={isUploadingPhoto || isOffline}
@@ -352,14 +370,15 @@ export function ItemDetailDrawer({
             {/* Quick Condition Check (Member & Admin only) */}
             {canCheck && (
               <div className="space-y-2 rounded-xl border border-border bg-secondary/35 p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Quick Sunday Check
                   </h3>
-                  {activeItem.checkedBy && (
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      Checked by {activeItem.checkedBy} ·{' '}
-                      {formatLastCheckedDate(activeItem)}
+                  {(activeItem.checkedBy || activeItem.checked_at || activeItem.dateChecked) && (
+                    <span className="font-sans text-xs tabular-nums text-muted-foreground">
+                      {activeItem.checkedBy
+                        ? `Checked by ${activeItem.checkedBy} · ${formatLastCheckedDate(activeItem)}`
+                        : `Last checked ${formatLastCheckedDate(activeItem)}`}
                     </span>
                   )}
                 </div>
@@ -374,40 +393,40 @@ export function ItemDetailDrawer({
 
             {/* Equipment Specs */}
             <div className="space-y-3">
-              <h3 className="font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <h3 className="font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Equipment Specifications
               </h3>
               <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-card p-4 text-sm">
                 <div>
-                  <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Availability
                   </dt>
-                  <dd className="mt-0.5 font-mono font-semibold tabular-nums text-foreground">
+                  <dd className="mt-0.5 font-sans font-semibold tabular-nums text-foreground">
                     {`${activeItem.available_qty} / ${activeItem.qty}`} available
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Location
                   </dt>
                   <dd className="mt-0.5 font-medium text-foreground">{locationName}</dd>
                 </div>
                 <div>
-                  <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Owner
                   </dt>
                   <dd className="mt-0.5 font-medium text-foreground">{activeItem.owner || '—'}</dd>
                 </div>
                 <div>
-                  <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Last Checked
                   </dt>
-                  <dd className="mt-0.5 font-medium text-foreground">
+                  <dd className="mt-0.5 font-medium tabular-nums text-foreground">
                     {formatLastCheckedDate(activeItem)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Equipment Type
                   </dt>
                   <dd className="mt-0.5 font-medium text-foreground">
@@ -427,10 +446,10 @@ export function ItemDetailDrawer({
                 </div>
                 {activeItem.min_qty !== null && activeItem.min_qty !== undefined && (
                   <div>
-                    <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                       Min Stock Alert
                     </dt>
-                    <dd className="mt-0.5 flex flex-wrap items-center gap-2 font-mono font-semibold tabular-nums text-foreground">
+                    <dd className="mt-0.5 flex flex-wrap items-center gap-2 font-sans font-semibold tabular-nums text-foreground">
                       <span>{activeItem.min_qty}</span>
                       {lowStock && <Badge variant="lowStock">Low Stock</Badge>}
                     </dd>
@@ -438,7 +457,7 @@ export function ItemDetailDrawer({
                 )}
                 {activeItem.description && (
                   <div className="col-span-2 border-t border-border pt-3">
-                    <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                       Description
                     </dt>
                     <dd className="mt-1 whitespace-pre-line text-sm text-foreground">
@@ -448,7 +467,7 @@ export function ItemDetailDrawer({
                 )}
                 {activeItem.remarks && (
                   <div className="col-span-2 border-t border-border pt-3">
-                    <dt className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                       Remarks
                     </dt>
                     <dd className="mt-1 whitespace-pre-line text-sm text-foreground">
@@ -462,7 +481,7 @@ export function ItemDetailDrawer({
             {/* Loans Section — Role-Isolated */}
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <h3 className="font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Loans & Check-Out
                 </h3>
                 {canCheck && (
@@ -529,7 +548,7 @@ export function ItemDetailDrawer({
                               {overdue && <Badge variant="repair">Overdue</Badge>}
                             </div>
                             {loan.borrower_contact && (
-                              <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                              <p className="mt-0.5 font-sans text-xs tabular-nums text-muted-foreground">
                                 {loan.borrower_contact}
                               </p>
                             )}
@@ -553,7 +572,7 @@ export function ItemDetailDrawer({
                           )}
                         </div>
 
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-muted-foreground">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 font-sans text-xs tabular-nums text-muted-foreground">
                           <span>Out: {formatDisplayDate(loan.checked_out_at)}</span>
                           <span>
                             Due: {loan.due_date ? formatDisplayDate(loan.due_date) : 'No due date'}

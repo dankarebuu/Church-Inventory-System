@@ -37,12 +37,15 @@ export function CommandDialog({
 }) {
   return (
     <Dialog {...props}>
-      <DialogContent className="overflow-hidden p-0 shadow-modal" showCloseButton={false}>
+      <DialogContent
+        className="overflow-hidden p-0 shadow-modal [&_[data-slot=command-input-wrapper]]:pr-11 [&_[data-slot=dialog-close]]:right-3 [&_[data-slot=dialog-close]]:top-2.5"
+        showCloseButton
+      >
         <DialogHeader className="sr-only">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <Command className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:size-4 [&_[cmdk-input]]:h-11 [&_[cmdk-item]]:px-2.5 [&_[cmdk-item]]:py-2">
+        <Command className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:font-sans [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:size-4 [&_[cmdk-input]]:h-11 [&_[cmdk-item]]:px-2.5 [&_[cmdk-item]]:py-2">
           {children}
         </Command>
       </DialogContent>
@@ -52,6 +55,8 @@ export function CommandDialog({
 
 export function CommandInput({
   className,
+  id = 'command-palette-search',
+  name = 'command_search',
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
@@ -61,9 +66,14 @@ export function CommandInput({
     >
       <Search className="size-4 shrink-0 text-muted-foreground" />
       <CommandPrimitive.Input
+        id={id}
+        name={name}
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
         data-slot="command-input"
         className={cn(
-          'flex h-10 w-full rounded-md bg-transparent py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
+          'flex h-10 w-full rounded-md bg-transparent py-2 text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm',
           className
         )}
         {...props}
@@ -79,7 +89,7 @@ export function CommandList({
   return (
     <CommandPrimitive.List
       data-slot="command-list"
-      className={cn('max-h-[340px] scroll-py-1 overflow-y-auto overflow-x-hidden', className)}
+      className={cn('max-h-[340px] scroll-py-1 overflow-y-auto overflow-x-hidden overscroll-contain', className)}
       {...props}
     />
   );

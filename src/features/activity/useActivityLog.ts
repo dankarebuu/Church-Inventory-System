@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/useAuth';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
 import { queryKeys } from '@/lib/queryKeys';
@@ -14,7 +14,7 @@ import type {
 } from '@/types/database';
 
 const EMPTY_HISTORY: HistoryEntry[] = [];
-const HISTORY_FETCH_LIMIT = 200;
+export const HISTORY_FETCH_LIMIT = 200;
 
 type HistoryInsert = Database['public']['Tables']['history_log']['Insert'];
 type InventoryUpdate = Database['public']['Tables']['inventory']['Update'];
@@ -197,12 +197,48 @@ function isUndoHistoryParams(input: UndoHistoryInput): input is UndoHistoryParam
   return typeof input === 'object' && input !== null && 'entry' in input;
 }
 
-async function fetchHistoryLog(): Promise<HistoryEntry[]> {
+function isForeignKeyViolation(error: { code?: string; message?: string }): boolean {
+  if (error.code === '23503') return true;
+  return typeof error.message === 'string' && /foreign key constraint/i.test(error.message);
+}
+
+function stripDeletedForeignKeys(patch: InventoryUpdate): InventoryUpdate {
+  const next: InventoryUpdate = { ...patch };
+  if ('category_id' in next) next.category_id = null;
+  if ('subcategory_id' in next) next.subcategory_id = null;
+  if ('location_id' in next) next.location_id = null;
+  if ('equipment_type_id' in next) next.equipment_type_id = null;
+  return next;
+}
+
+async function updateInventoryWithFkFallback(
+  itemId: string,
+  patch: InventoryUpdate
+): Promise<InventoryUpdate> {
+  const { error } = await supabase.from('inventory').update(patch).eq('id', itemId);
+  if (!error) return patch;
+
+  if (isForeignKeyViolation(error)) {
+    const safePatch = stripDeletedForeignKeys(patch);
+    const { error: retryError } = await supabase
+      .from('inventory')
+      .update(safePatch)
+      .eq('id', itemId);
+    if (retryError) {
+      throw new Error(retryError.message);
+    }
+    return safePatch;
+  }
+
+  throw new Error(error.message);
+}
+
+async function fetchHistoryLog(limit: number): Promise<HistoryEntry[]> {
   const { data, error } = await supabase
     .from('history_log')
     .select('*')
     .order('timestamp', { ascending: false })
-    .limit(HISTORY_FETCH_LIMIT);
+    .limit(limit);
 
   if (error) {
     throw new Error(error.message);
@@ -218,14 +254,16 @@ async function fetchHistoryLog(): Promise<HistoryEntry[]> {
 export function useActivityLog(enabled: boolean) {
   const { role, user, profile } = useAuth();
   const queryClient = useQueryClient();
+  const [limit, setLimit] = useState(HISTORY_FETCH_LIMIT);
 
   const canReadHistory =
     enabled && isSupabaseConfigured && (role === 'member' || role === 'admin');
 
   const query = useQuery<HistoryEntry[], Error>({
-    queryKey: queryKeys.history,
-    queryFn: fetchHistoryLog,
+    queryKey: [...queryKeys.history, limit],
+    queryFn: () => fetchHistoryLog(limit),
     enabled: canReadHistory,
+    placeholderData: keepPreviousData,
   });
 
   const assertCanAdminMutate = useCallback(() => {
@@ -372,13 +410,7 @@ export function useActivityLog(enabled: boolean) {
           if (!updated || typeof updated.id !== 'string') continue;
           const sanitizedPrev = sanitizeMutableInventoryFields(updated.prev_data);
           if (Object.keys(sanitizedPrev).length === 0) continue;
-          const { error: updErr } = await supabase
-            .from('inventory')
-            .update(sanitizedPrev)
-            .eq('id', updated.id);
-          if (updErr) {
-            throw new Error(updErr.message);
-          }
+          await updateInventoryWithFkFallback(updated.id, sanitizedPrev);
         }
 
         const { error: markErr } = await supabase
@@ -461,13 +493,7 @@ export function useActivityLog(enabled: boolean) {
           throw new Error('Cannot undo because the previous item snapshot is missing.');
         }
 
-        const { error: revertErr } = await supabase
-          .from('inventory')
-          .update(sanitizedPrev)
-          .eq('id', itemId);
-        if (revertErr) {
-          throw new Error(revertErr.message);
-        }
+        const appliedPrev = await updateInventoryWithFkFallback(itemId, sanitizedPrev);
 
         const { error: markErr } = await supabase
           .from('history_log')
@@ -494,7 +520,7 @@ export function useActivityLog(enabled: boolean) {
           id: createHistoryId(),
           action: 'updated',
           item_id: itemId,
-          item_data: { ...sanitizedPrev, id: itemId },
+          item_data: { ...appliedPrev, id: itemId },
           prev_data:
             sanitizedCurrent && Object.keys(sanitizedCurrent).length > 0
               ? { ...sanitizedCurrent, id: itemId }
@@ -540,8 +566,17 @@ export function useActivityLog(enabled: boolean) {
     [runUndo]
   );
 
+  const entries = canReadHistory ? (query.data ?? EMPTY_HISTORY) : EMPTY_HISTORY;
+  const hasMore = canReadHistory && entries.length >= limit;
+  const loadMore = useCallback(() => {
+    setLimit((prev) => prev + HISTORY_FETCH_LIMIT);
+  }, []);
+
   return {
-    entries: canReadHistory ? (query.data ?? EMPTY_HISTORY) : EMPTY_HISTORY,
+    entries,
+    hasMore,
+    loadMore,
+    isFetchingMore: canReadHistory ? query.isFetching && !query.isLoading : false,
     isLoading: canReadHistory ? query.isLoading : false,
     isError: canReadHistory ? query.isError : false,
     error: canReadHistory ? query.error : null,

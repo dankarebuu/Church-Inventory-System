@@ -263,8 +263,8 @@ export function CategoryDialog({
               <p className="font-display truncate text-sm font-semibold text-foreground">
                 {name.trim() || 'Category Preview'}
               </p>
-              <p className="font-mono text-[11px] text-muted-foreground">
-                {previewColor.toUpperCase()} · {icon}
+              <p className="font-sans text-xs text-muted-foreground">
+                <code className="font-mono">{previewColor.toUpperCase()}</code> · {icon}
               </p>
             </div>
           </div>

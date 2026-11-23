@@ -3,6 +3,7 @@ import {
   resolveSubcategoryName,
 } from '@/features/inventory/inventoryUi';
 import type { EnrichedInventoryItem } from '@/features/inventory/useInventory';
+import { BRAND } from '@/lib/branding';
 import { formatDisplayDate, trimOrNull } from '@/lib/utils';
 import type {
   Category,
@@ -731,8 +732,16 @@ function triggerBrowserDownload(
   }
 }
 
+const CSV_FORMULA_TRIGGER_PATTERN = /^[=+\-@\t\r]/;
+
+function sanitizeCsvFormulaCell(value: string): string {
+  return CSV_FORMULA_TRIGGER_PATTERN.test(value) ? `'${value}` : value;
+}
+
 function escapeCsvCell(value: string | number | null | undefined): string {
-  const raw = value === null || value === undefined ? '' : String(value);
+  if (value === null || value === undefined) return '""';
+  const raw =
+    typeof value === 'number' ? String(value) : sanitizeCsvFormulaCell(String(value));
   return `"${raw.replace(/"/g, '""')}"`;
 }
 
@@ -836,7 +845,7 @@ export function exportItemsToCSV(
 
   if (options.download !== false) {
     const filename =
-      options.filename ?? `wingmacc-inventory-${formatLocalYmd()}.csv`;
+      options.filename ?? `${BRAND.filePrefix}-inventory-${formatLocalYmd()}.csv`;
     triggerBrowserDownload(`\uFEFF${csv}`, filename, 'text/csv;charset=utf-8;');
   }
 
@@ -871,7 +880,7 @@ export function exportItemsToJSON(
 
   if (options.download !== false) {
     const filename =
-      options.filename ?? `wingmacc-inventory-${formatLocalYmd()}.json`;
+      options.filename ?? `${BRAND.filePrefix}-inventory-${formatLocalYmd()}.json`;
     triggerBrowserDownload(json, filename, 'application/json;charset=utf-8;');
   }
 

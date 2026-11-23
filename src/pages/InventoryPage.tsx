@@ -16,6 +16,7 @@ import {
   Printer,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Table as TableIcon,
   Upload,
   X,
@@ -23,6 +24,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { OfflineNotice } from '@/components/layout/OfflineBanner';
+import { BRAND } from '@/lib/branding';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,8 +35,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+import { Badge, badgeVariants } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CardGridSkeleton, TableRowsSkeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,7 +90,7 @@ import { useLoanMutations } from '@/features/loans/useLoans';
 import { sortLocations, useLocations } from '@/features/locations/useLocations';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import { parseImages, trimOrNull } from '@/lib/utils';
+import { cn, parseImages, trimOrNull } from '@/lib/utils';
 import type {
   Category,
   EquipmentType,
@@ -478,6 +481,17 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       photoFilter !== ALL_OPTION
   );
 
+  // Facet selects only (search + quick toggles stay visible on mobile).
+  const activeFacetCount = [
+    rawTypeParam,
+    rawCategoryParam,
+    rawSubcategoryParam,
+    rawLocationParam,
+    conditionFilter !== ALL_OPTION,
+    loanFilter !== ALL_OPTION,
+  ].filter(Boolean).length;
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   const filteredItems = useMemo(() => {
     const query = rawSearch.trim().toLowerCase();
     const matchedCategoryObj =
@@ -846,14 +860,14 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-primary">
             Gear Catalog
           </span>
           <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Band Inventory
+            Equipment Inventory
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Browse, filter, inspect, and check off WINGMACC church band equipment.
+            Browse, filter, inspect, and check off {BRAND.churchShortName} ministry equipment.
           </p>
         </div>
 
@@ -962,15 +976,25 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
       )}
 
       {/* Multi-facet Filter Bar */}
-      <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-card">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
-          <div className="relative sm:col-span-2 lg:col-span-2">
+      <div
+        role="search"
+        aria-label="Filter equipment"
+        className="@container space-y-3 rounded-xl border border-border bg-card p-4 shadow-card"
+      >
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
             />
             <Input
+              id="inventory-search"
+              name="q"
               type="search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               value={rawSearch}
               onChange={(event) => handleSearchChange(event.target.value)}
               placeholder="Search equipment, brand, serial, location..."
@@ -979,6 +1003,32 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             />
           </div>
 
+          {/* Mobile-only: collapse facet selects so gear is visible without scrolling */}
+          <Button
+            type="button"
+            variant={activeFacetCount > 0 ? 'default' : 'outline'}
+            onClick={() => setFiltersOpen((prev) => !prev)}
+            aria-expanded={filtersOpen}
+            aria-controls="inventory-facet-filters"
+            className="h-9 shrink-0 px-3 md:hidden"
+          >
+            <SlidersHorizontal className="size-4" aria-hidden="true" />
+            <span>Filters</span>
+            {activeFacetCount > 0 && (
+              <span className="rounded-full bg-primary-foreground/20 px-1.5 font-sans text-[10px] tabular-nums">
+                {activeFacetCount}
+              </span>
+            )}
+          </Button>
+        </div>
+
+        <div
+          id="inventory-facet-filters"
+          className={cn(
+            'grid grid-cols-2 gap-3 @2xl:grid-cols-3 @5xl:grid-cols-6',
+            !filtersOpen && 'max-md:hidden'
+          )}
+        >
           <Select value={resolvedTypeId} onValueChange={handleTypeFilterChange}>
             <SelectTrigger aria-label="Filter by equipment type">
               <SelectValue placeholder="All Types" />
@@ -1017,7 +1067,11 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
               <SelectValue placeholder="All Subcategories" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_OPTION}>All Subcategories</SelectItem>
+              <SelectItem value={ALL_OPTION}>
+                {filterSubcategories.length === 0
+                  ? 'Subcategory (select category)'
+                  : 'All Subcategories'}
+              </SelectItem>
               {filterSubcategories.map((sub) => (
                 <SelectItem key={sub.id} value={sub.id}>
                   {sub.name}
@@ -1040,31 +1094,29 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             </SelectContent>
           </Select>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Select value={conditionFilter} onValueChange={handleConditionFilterChange}>
-              <SelectTrigger aria-label="Filter by condition">
-                <SelectValue placeholder="Condition" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_OPTION}>All Status</SelectItem>
-                <SelectItem value="working">Working</SelectItem>
-                <SelectItem value="flagged">Flagged (Repair/Missing)</SelectItem>
-                <SelectItem value="repair">Needs Repair</SelectItem>
-                <SelectItem value="missing">Missing</SelectItem>
-              </SelectContent>
-            </Select>
+          <Select value={conditionFilter} onValueChange={handleConditionFilterChange}>
+            <SelectTrigger aria-label="Filter by condition">
+              <SelectValue placeholder="Condition" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_OPTION}>All Status</SelectItem>
+              <SelectItem value="working">Working</SelectItem>
+              <SelectItem value="flagged">Flagged (Repair/Missing)</SelectItem>
+              <SelectItem value="repair">Needs Repair</SelectItem>
+              <SelectItem value="missing">Missing</SelectItem>
+            </SelectContent>
+          </Select>
 
-            <Select value={loanFilter} onValueChange={handleLoanFilterChange}>
-              <SelectTrigger aria-label="Filter by loan status">
-                <SelectValue placeholder="Loan" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_OPTION}>All Loans</SelectItem>
-                <SelectItem value="available">Available</SelectItem>
-                <SelectItem value="on-loan">On Loan</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={loanFilter} onValueChange={handleLoanFilterChange}>
+            <SelectTrigger aria-label="Filter by loan status">
+              <SelectValue placeholder="Loan" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_OPTION}>All Loans</SelectItem>
+              <SelectItem value="available">Available</SelectItem>
+              <SelectItem value="on-loan">On Loan</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Quick Cleanup Toggles, Group-By Segmented Control & Selection Bar */}
@@ -1094,16 +1146,54 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
               <span>Missing Photos</span>
             </Button>
 
-            <div className="flex flex-wrap items-center gap-2 pl-1 font-mono tabular-nums text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 pl-1 font-sans tabular-nums text-muted-foreground">
               <span aria-live="polite" aria-atomic="true">
                 {summaryStats.itemCount} {summaryStats.itemCount === 1 ? 'item' : 'items'} (
                 {summaryStats.totalUnits} {summaryStats.totalUnits === 1 ? 'unit' : 'units'})
               </span>
               {summaryStats.flaggedCount > 0 && (
-                <Badge variant="repair">{summaryStats.flaggedCount} Flagged</Badge>
+                <button
+                  type="button"
+                  aria-pressed={conditionFilter === 'flagged'}
+                  title={
+                    conditionFilter === 'flagged'
+                      ? 'Clear flagged filter'
+                      : 'Filter to flagged equipment'
+                  }
+                  onClick={() =>
+                    handleConditionFilterChange(
+                      conditionFilter === 'flagged' ? ALL_OPTION : 'flagged'
+                    )
+                  }
+                  className={cn(
+                    badgeVariants({ variant: 'repair' }),
+                    'cursor-pointer transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    conditionFilter === 'flagged' && 'ring-2 ring-red-500/40'
+                  )}
+                >
+                  {summaryStats.flaggedCount} Flagged
+                </button>
               )}
               {summaryStats.onLoanCount > 0 && (
-                <Badge variant="loaned">{summaryStats.onLoanCount} On Loan</Badge>
+                <button
+                  type="button"
+                  aria-pressed={loanFilter === 'on-loan'}
+                  title={
+                    loanFilter === 'on-loan'
+                      ? 'Clear on-loan filter'
+                      : 'Filter to equipment on loan'
+                  }
+                  onClick={() =>
+                    handleLoanFilterChange(loanFilter === 'on-loan' ? ALL_OPTION : 'on-loan')
+                  }
+                  className={cn(
+                    badgeVariants({ variant: 'loaned' }),
+                    'cursor-pointer transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    loanFilter === 'on-loan' && 'ring-2 ring-blue-500/40'
+                  )}
+                >
+                  {summaryStats.onLoanCount} On Loan
+                </button>
               )}
               {summaryStats.lowStockCount > 0 && (
                 <Badge variant="lowStock">{summaryStats.lowStockCount} Low Stock</Badge>
@@ -1139,7 +1229,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
 
             {viewMode === 'grid' && (
               <div className="flex items-center gap-1.5">
-                <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Group by:
                 </span>
                 <div
@@ -1189,15 +1279,11 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
 
       {/* Main Content States */}
       {isLoading ? (
-        <div
-          role="status"
-          className="flex min-h-[260px] flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-8 text-muted-foreground shadow-card"
-        >
-          <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
-          <span className="font-mono text-xs uppercase tracking-wider">
-            Loading inventory catalog...
-          </span>
-        </div>
+        viewMode === 'table' ? (
+          <TableRowsSkeleton label="Loading inventory catalog..." rows={6} />
+        ) : (
+          <CardGridSkeleton label="Loading inventory catalog..." count={6} />
+        )
       ) : isError ? (
         <div
           role="alert"
@@ -1243,44 +1329,48 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
             )
           )}
         </div>
-      ) : viewMode === 'table' ? (
-        <InventoryTable
-          items={filteredItems}
-          role={role}
-          categories={categories}
-          locations={locations}
-          equipmentTypes={equipmentTypes}
-          commentCounts={visibleCommentCounts}
-          selectionMode={canAdmin && selectionMode}
-          selectedIds={selectedIds}
-          onToggleSelect={handleToggleSelect}
-          onToggleSelectAll={handleToggleSelectAllTable}
-          onSelectItem={handleOpenItem}
-          onQuickCheck={handleQuickCheck}
-          onEdit={handleOpenEdit}
-          onDelete={setPendingDeleteItem}
-          isChecking={isChecking}
-          isOffline={isOffline}
-        />
       ) : (
-        <InventoryGrid
-          items={filteredItems}
-          role={role}
-          categories={categories}
-          locations={locations}
-          equipmentTypes={equipmentTypes}
-          commentCounts={visibleCommentCounts}
-          groupBy={groupBy}
-          selectionMode={canAdmin && selectionMode}
-          selectedIds={selectedIds}
-          onToggleSelect={handleToggleSelect}
-          onSelectItem={handleOpenItem}
-          onQuickCheck={handleQuickCheck}
-          onEdit={handleOpenEdit}
-          onDelete={setPendingDeleteItem}
-          isChecking={isChecking}
-          isOffline={isOffline}
-        />
+        <div key={viewMode} className="view-switch-enter">
+          {viewMode === 'table' ? (
+            <InventoryTable
+              items={filteredItems}
+              role={role}
+              categories={categories}
+              locations={locations}
+              equipmentTypes={equipmentTypes}
+              commentCounts={visibleCommentCounts}
+              selectionMode={canAdmin && selectionMode}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+              onToggleSelectAll={handleToggleSelectAllTable}
+              onSelectItem={handleOpenItem}
+              onQuickCheck={handleQuickCheck}
+              onEdit={handleOpenEdit}
+              onDelete={setPendingDeleteItem}
+              isChecking={isChecking}
+              isOffline={isOffline}
+            />
+          ) : (
+            <InventoryGrid
+              items={filteredItems}
+              role={role}
+              categories={categories}
+              locations={locations}
+              equipmentTypes={equipmentTypes}
+              commentCounts={visibleCommentCounts}
+              groupBy={groupBy}
+              selectionMode={canAdmin && selectionMode}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+              onSelectItem={handleOpenItem}
+              onQuickCheck={handleQuickCheck}
+              onEdit={handleOpenEdit}
+              onDelete={setPendingDeleteItem}
+              isChecking={isChecking}
+              isOffline={isOffline}
+            />
+          )}
+        </div>
       )}
 
       {/* Sticky Admin Multi-Select Action Bar */}
@@ -1290,7 +1380,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
           aria-label="Bulk selection actions"
           className="sticky bottom-20 z-20 mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/40 bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md md:bottom-4"
         >
-          <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
+          <span className="font-sans text-sm font-semibold tabular-nums text-foreground">
             {selectedIds.size} selected
           </span>
           <div className="flex items-center gap-2">
@@ -1424,7 +1514,7 @@ export function InventoryPage({ headerActions }: InventoryPageProps) {
                 event.preventDefault();
                 void handleConfirmDelete();
               }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive-fill text-destructive-foreground hover:bg-destructive-fill/90"
             >
               {isDeleting ? 'Moving...' : 'Move to Trash'}
             </AlertDialogAction>

@@ -550,4 +550,25 @@ describe('exportItemsToCSV & exportItemsToJSON', () => {
       )
     ).toThrow(/min qty/i);
   });
+
+  it('neutralizes spreadsheet formula-injection prefixes in CSV exports', () => {
+    const dangerousItems: EnrichedInventoryItem[] = [
+      {
+        ...sampleItems[0],
+        id: 'item-formula',
+        item: '=CMD("calc")',
+        brand: '+SUM(A1:A2)',
+        owner: '@admin',
+        remarks: '-1+1',
+        serial: '\tSN-99',
+      },
+    ];
+
+    const csv = exportItemsToCSV(dangerousItems, [], [], { download: false });
+    expect(csv).toContain(`"'=CMD(""calc"")"`);
+    expect(csv).toContain(`"'+SUM(A1:A2)"`);
+    expect(csv).toContain(`"'@admin"`);
+    expect(csv).toContain(`"'-1+1"`);
+    expect(csv).toContain(`"'\tSN-99"`);
+  });
 });

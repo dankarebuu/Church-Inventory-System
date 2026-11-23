@@ -558,7 +558,7 @@ describe('InventoryPage', () => {
     });
 
     // Opening ItemDetailDrawer and clicking Edit launches ItemFormDialog cleanly
-    await user.click(screen.getByText('Pearl Brass Snare'));
+    await user.click(screen.getByText('Mogami XLR Cable'));
     const drawer = await screen.findByRole('dialog');
     await user.click(within(drawer).getByRole('button', { name: /^edit$/i }));
     const editHeading = await screen.findByRole('heading', { name: /edit equipment item/i });
@@ -670,6 +670,14 @@ describe('InventoryPage', () => {
     await user.click(await screen.findByRole('option', { name: /^on loan$/i }));
     expect(screen.getByText('Pearl Brass Snare')).toBeInTheDocument();
     expect(screen.queryByText('Mogami XLR Cable')).not.toBeInTheDocument();
+
+    // Clicking the summary "1 On Loan" / "1 Flagged" chips toggles filters directly
+    await user.click(screen.getByRole('button', { name: /1 on loan/i }));
+    expect(screen.getByText('Mogami XLR Cable')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /1 flagged/i }));
+    expect(screen.queryByText('Pearl Brass Snare')).not.toBeInTheDocument();
+    expect(screen.getByText('Mogami XLR Cable')).toBeInTheDocument();
   });
 
   it('prefers local checked_at over stale UTC dateChecked in InventoryGrid and ItemDetailDrawer while falling back for legacy items', async () => {
@@ -1036,9 +1044,19 @@ describe('InventoryPage', () => {
     await user.click(screen.getByRole('button', { name: /clear filters/i }));
     expect(liveRegion).toHaveTextContent('2 items (6 units)');
 
-    // Switch to Table View and verify 36x36 (size-9) thumbnail + ImageOff fallback tile
+    // Grid View renders thumbnail only for photographed gear and hides cleanly on load error
+    const gridThumb = screen.getByAltText('Pearl Brass Snare thumbnail');
+    expect(gridThumb).toHaveAttribute('src', 'https://cdn.example.com/snare.jpg');
+    expect(screen.queryByAltText('Mogami XLR Cable thumbnail')).not.toBeInTheDocument();
+    fireEvent.error(gridThumb);
+    expect(screen.queryByAltText('Pearl Brass Snare thumbnail')).not.toBeInTheDocument();
+
+    // Switch to Table View and verify keyboard-scrollable region, scope="col", 36x36 thumbnail, and ImageOff fallback
     await user.click(screen.getByRole('button', { name: /table/i }));
-    const table = screen.getByRole('table');
+    const tableRegion = screen.getByRole('region', { name: /equipment inventory table/i });
+    expect(tableRegion).toHaveAttribute('tabindex', '0');
+    const table = within(tableRegion).getByRole('table');
+    expect(table.querySelectorAll('thead th[scope="col"]').length).toBeGreaterThan(0);
     const snareThumb = within(table).getByAltText('Pearl Brass Snare thumbnail');
     expect(snareThumb).toHaveAttribute('src', 'https://cdn.example.com/snare.jpg');
     expect(snareThumb.parentElement).toHaveClass('size-9');

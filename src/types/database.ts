@@ -327,6 +327,13 @@ export type Database = {
         };
         Returns: boolean;
       };
+      get_item_comment_counts: {
+        Args: Record<string, never>;
+        Returns: Array<{
+          item_id: string;
+          comment_count: number;
+        }>;
+      };
     };
   };
 };

@@ -157,6 +157,11 @@ describe('useOfflineCatalogSync', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
+    queryClient.setQueryData(queryKeys.loans, [{ id: 'loan-1', borrower_name: 'Private User' }]);
+    queryClient.setQueryData(queryKeys.history, [{ id: 'hist-1', user_email: 'usera@church.org' }]);
+    queryClient.setQueryData(queryKeys.profiles, [{ id: 'user-A', email: 'usera@church.org' }]);
+    queryClient.setQueryData(queryKeys.itemComments('a-1'), [{ id: 'c-1', body: 'Private note' }]);
+    queryClient.setQueryData(queryKeys.commentCounts, { 'a-1': 1 });
 
     const { rerender } = render(
       <QueryClientProvider client={queryClient}>
@@ -169,12 +174,18 @@ describe('useOfflineCatalogSync', () => {
     ]);
     expect(queryClient.getQueryData(queryKeys.categories)).toEqual([sampleCategory]);
 
-    // Switching to User B offline clears User A's in-memory catalog data and hydrates User B's snapshot.
+    // Switching to User B offline clears User A's in-memory catalog and private queries and hydrates User B's snapshot.
     rerender(
       <QueryClientProvider client={queryClient}>
         <SyncHarness userId="user-B" role="member" isAuthLoading={false} isOnline={false} />
       </QueryClientProvider>
     );
+
+    expect(queryClient.getQueryData(queryKeys.loans)).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.history)).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.profiles)).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.itemComments('a-1'))).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.commentCounts)).toBeUndefined();
 
     expect(queryClient.getQueryData(queryKeys.inventory('member'))).toEqual([
       expect.objectContaining({ id: 'b-1', item: 'User B Mic' }),

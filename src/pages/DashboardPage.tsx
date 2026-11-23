@@ -5,11 +5,11 @@ import {
   ArrowLeftRight,
   ArrowRight,
   Box,
+  CalendarCheck2,
   CheckCircle2,
   ClipboardCheck,
   FolderTree,
   History,
-  Loader2,
   Package,
   RefreshCw,
   Tags,
@@ -20,6 +20,14 @@ import { Link } from 'react-router-dom';
 import { describeHistoryEntry, resolveHistoryItemName, useActivityLog } from '@/features/activity/useActivityLog';
 import { useAuth } from '@/features/auth/useAuth';
 import { buildCategoryTree, getCategoryColor, useCategories } from '@/features/categories/useCategories';
+import { CheckOffTrendChart } from '@/features/dashboard/CheckOffTrendChart';
+import {
+  buildCheckOffTrend,
+  computeCheckOffFreshness,
+  formatCompactCount,
+  formatWholePercent,
+  sortHealthBucketsForAttention,
+} from '@/features/dashboard/dashboardCharts';
 import {
   DEFAULT_EQUIPMENT_TYPE_COLOR,
   getEquipmentTypeColor,
@@ -33,6 +41,7 @@ import { useLoans } from '@/features/loans/useLoans';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { DashboardSkeleton, FeedListSkeleton } from '@/components/ui/skeleton';
 import { cn, formatDisplayDate, getUserEmailPrefix, trimOrNull } from '@/lib/utils';
 import type {
   Category,
@@ -545,10 +554,20 @@ export function DashboardPage() {
     [activityEntries, canViewOperationalData]
   );
 
-  const kpiCards = useMemo<KpiCardSpec[]>(() => {
-    const workingPercent =
-      metrics.loggedItems > 0 ? Math.round((metrics.workingCount / metrics.loggedItems) * 100) : 0;
+  const workingPercent = useMemo(
+    () => formatWholePercent(metrics.workingCount, metrics.loggedItems),
+    [metrics.workingCount, metrics.loggedItems]
+  );
 
+  const freshness = useMemo(() => computeCheckOffFreshness(items), [items]);
+  const checkOffTrend = useMemo(() => buildCheckOffTrend(items, 14), [items]);
+
+  const sortedHealthBuckets = useMemo(() => {
+    const raw = healthGroupBy === 'type' ? equipmentTypeHealth : categoryHealth;
+    return sortHealthBucketsForAttention(raw);
+  }, [healthGroupBy, equipmentTypeHealth, categoryHealth]);
+
+  const supportMetricPills = useMemo<KpiCardSpec[]>(() => {
     return [
       {
         id: 'logged-items',
@@ -569,17 +588,6 @@ export function DashboardPage() {
         to: '/inventory',
         icon: Box,
         tone: 'default',
-      },
-      {
-        id: 'working',
-        testId: 'kpi-working',
-        label: 'Working',
-        value: metrics.workingCount,
-        sublabel:
-          metrics.loggedItems > 0 ? `${workingPercent}% ready for service` : 'Ready for service',
-        to: '/inventory?condition=working',
-        icon: CheckCircle2,
-        tone: 'success',
       },
       {
         id: 'flagged',
@@ -630,7 +638,7 @@ export function DashboardPage() {
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-primary">
             Workspace Overview
           </span>
           <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -658,15 +666,7 @@ export function DashboardPage() {
       </div>
 
       {isCoreLoading ? (
-        <div
-          role="status"
-          className="flex min-h-[260px] flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-8 text-muted-foreground shadow-card"
-        >
-          <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
-          <span className="font-mono text-xs uppercase tracking-wider">
-            Loading operations dashboard...
-          </span>
-        </div>
+        <DashboardSkeleton label="Loading operations dashboard..." />
       ) : isCoreError ? (
         <div
           role="alert"
@@ -696,56 +696,128 @@ export function DashboardPage() {
         </div>
       ) : (
         <>
-          {/* Clickable Summary KPIs */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-            {kpiCards.map((kpi) => {
-              const Icon = kpi.icon;
-              const tone = kpi.tone ?? 'default';
+          {/* 01 One Number First + 02 Add a Comparison: Hero Readiness Card & Supporting Strip */}
+          <div className="overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card">
+            <Link
+              to="/inventory?condition=working"
+              data-testid="kpi-working"
+              className="group flex flex-col gap-5 p-5 transition-colors hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center sm:justify-between sm:p-6"
+            >
+              <div className="min-w-0 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-600 dark:text-emerald-400"
+                  >
+                    <CheckCircle2 className="size-4" />
+                  </span>
+                  <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Working Items
+                  </span>
+                </div>
 
-              return (
-                <Link
-                  key={kpi.id}
-                  to={kpi.to}
-                  data-testid={kpi.testId}
-                  className={cn(
-                    'group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-card-foreground shadow-card transition-[background-color,border-color,box-shadow,transform,translate] duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    tone === 'danger' && 'border-red-500/30'
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {kpi.label}
-                    </span>
-                    <span
+                <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                  <span className="font-display text-4xl font-bold tracking-tight tabular-nums text-foreground sm:text-5xl">
+                    {formatCompactCount(metrics.workingCount)}
+                  </span>
+                  <span className="font-display text-lg font-medium tabular-nums text-muted-foreground sm:text-xl">
+                    of {formatCompactCount(metrics.loggedItems)} working
+                  </span>
+                </div>
+              </div>
+
+              <div className="w-full space-y-2.5 sm:max-w-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-sans text-xs font-medium text-foreground">
+                    {metrics.loggedItems === 0
+                      ? 'No inventory items logged yet'
+                      : metrics.flaggedCount === 0
+                        ? 'On target for Sunday'
+                        : `${formatCompactCount(metrics.flaggedCount)} below 100% target`}
+                  </span>
+                  <span className="shrink-0 font-display text-sm font-bold tabular-nums text-foreground">
+                    {metrics.loggedItems > 0 ? `${workingPercent}% ready` : '—'}
+                  </span>
+                </div>
+
+                <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className={cn(
+                      'h-full rounded-full transition-[width] duration-300 ease-out',
+                      metrics.flaggedCount === 0 && metrics.loggedItems > 0
+                        ? 'bg-emerald-600 dark:bg-emerald-500'
+                        : 'bg-primary'
+                    )}
+                    style={{
+                      width: `${metrics.loggedItems > 0 ? workingPercent : 0}%`,
+                    }}
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 font-sans text-xs tabular-nums text-muted-foreground">
+                  <span>
+                    {freshness.freshPercent}% checked in last 7 days (
+                    {formatCompactCount(freshness.checkedLast7Days)} of{' '}
+                    {formatCompactCount(freshness.totalItems)})
+                  </span>
+                  <span className="inline-flex items-center gap-1 font-medium text-primary group-hover:underline">
+                    <span>Working gear</span>
+                    <ArrowRight
+                      className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
                       aria-hidden="true"
-                      className={cn(
-                        'flex size-8 shrink-0 items-center justify-center rounded-lg',
-                        KPI_ICON_CLASSES[tone]
-                      )}
-                    >
-                      <Icon className="size-4" />
-                    </span>
-                  </div>
+                    />
+                  </span>
+                </div>
+              </div>
+            </Link>
 
-                  <div className="mt-3 space-y-1">
-                    <div className="flex items-baseline justify-between gap-2">
+            <div className="grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-4">
+              {supportMetricPills.map((kpi) => {
+                const Icon = kpi.icon;
+                const tone = kpi.tone ?? 'default';
+
+                return (
+                  <Link
+                    key={kpi.id}
+                    to={kpi.to}
+                    data-testid={kpi.testId}
+                    className="group flex flex-col justify-between bg-card p-3.5 transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {kpi.label}
+                      </span>
                       <span
+                        aria-hidden="true"
                         className={cn(
-                          'font-display text-3xl font-bold tracking-tight tabular-nums text-foreground',
-                          tone === 'danger' && 'text-destructive'
+                          'flex size-6 shrink-0 items-center justify-center rounded-md',
+                          KPI_ICON_CLASSES[tone]
                         )}
                       >
-                        {kpi.value}
+                        <Icon className="size-3.5" />
                       </span>
-                      {kpi.badge && <Badge variant="repair">{kpi.badge}</Badge>}
                     </div>
-                    <p className="truncate font-mono text-[11px] text-muted-foreground">
-                      {kpi.sublabel}
-                    </p>
-                  </div>
-                </Link>
-              );
-            })}
+
+                    <div className="mt-2 space-y-0.5">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span
+                          className={cn(
+                            'font-display text-xl font-bold tracking-tight tabular-nums text-foreground',
+                            tone === 'danger' && 'text-destructive'
+                          )}
+                        >
+                          {formatCompactCount(kpi.value)}
+                        </span>
+                        {kpi.badge && <Badge variant="repair">{kpi.badge}</Badge>}
+                      </div>
+                      <p className="truncate font-sans text-xs tabular-nums text-muted-foreground">
+                        {kpi.sublabel}
+                      </p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
 
           {/* Clickable Low-Stock Callout Card */}
@@ -753,10 +825,10 @@ export function DashboardPage() {
             to="/inventory?stock=low"
             data-testid="dashboard-low-stock"
             className={cn(
-              'group flex flex-col justify-between gap-4 rounded-xl border p-4 shadow-card transition-[background-color,border-color,box-shadow,transform,translate] duration-150 ease-out hover:-translate-y-0.5 sm:flex-row sm:items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'card-accent-hover group flex flex-col justify-between gap-4 rounded-xl border p-4 shadow-card sm:flex-row sm:items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               lowStockItems.length > 0
-                ? 'border-amber-500/40 bg-amber-500/[0.06] hover:border-amber-500/60 hover:shadow-hover'
-                : 'border-border bg-card hover:border-primary/40 hover:shadow-hover'
+                ? 'border-amber-500/40 bg-amber-500/[0.06] hover:border-amber-500/60'
+                : 'border-border bg-card'
             )}
           >
             <div className="flex min-w-0 items-start gap-3 sm:items-center">
@@ -784,7 +856,7 @@ export function DashboardPage() {
                   {lowStockItems.length > 0 ? (
                     <>
                       <span className="font-display text-xl font-bold tabular-nums text-amber-700 dark:text-amber-300">
-                        {lowStockItems.length}
+                        {formatCompactCount(lowStockItems.length)}
                       </span>
                       <Badge variant="lowStock">Restock Alert</Badge>
                     </>
@@ -794,7 +866,7 @@ export function DashboardPage() {
                 </div>
 
                 {lowStockItems.length > 0 ? (
-                  <p className="truncate font-mono text-xs text-muted-foreground">
+                  <p className="truncate font-sans text-xs tabular-nums text-muted-foreground">
                     {formatPluralCount(lowStockItems.length, 'item', 'items')} at or below min
                     threshold:{' '}
                     {lowStockItems
@@ -804,14 +876,14 @@ export function DashboardPage() {
                     {lowStockItems.length > 3 ? ` +${lowStockItems.length - 3} more` : ''}
                   </p>
                 ) : (
-                  <p className="font-mono text-xs text-muted-foreground">
+                  <p className="font-sans text-xs text-muted-foreground">
                     All stocked equipment is above configured minimum thresholds.
                   </p>
                 )}
               </div>
             </div>
 
-            <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs font-medium text-primary group-hover:underline">
+            <span className="inline-flex shrink-0 items-center gap-1.5 font-sans text-xs font-medium text-primary group-hover:underline">
               <span>{lowStockItems.length > 0 ? 'Review Low Stock' : 'Filter Low Stock'}</span>
               <ArrowRight
                 className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
@@ -820,121 +892,9 @@ export function DashboardPage() {
             </span>
           </Link>
 
-          {/* Primary Triage & Category Health Row */}
+          {/* 03 One Question Per Chart + 04 Label the Lines */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-            {/* Needs Attention */}
-            <Card
-              data-testid="dashboard-needs-attention"
-              className="flex flex-col lg:col-span-5"
-            >
-              <CardHeader className="flex-row items-center justify-between space-y-0 border-b border-border pb-4">
-                <div className="flex items-center gap-2.5">
-                  <span
-                    aria-hidden="true"
-                    className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-red-500/12 text-red-600 dark:text-red-400"
-                  >
-                    <Wrench className="size-4" />
-                  </span>
-                  <div>
-                    <h2 className="font-display text-base font-semibold leading-tight tracking-tight text-foreground">
-                      Needs Attention
-                    </h2>
-                    <p className="font-mono text-[11px] text-muted-foreground">
-                      {flaggedItems.length > 0
-                        ? `${formatPluralCount(flaggedItems.length, 'item', 'items')} flagged`
-                        : 'All clear'}
-                    </p>
-                  </div>
-                </div>
-
-                <Link
-                  to="/inventory?condition=flagged"
-                  className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span>View All</span>
-                  <ArrowRight
-                    className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
-                    aria-hidden="true"
-                  />
-                </Link>
-              </CardHeader>
-
-              <CardContent className="flex-1 pt-4">
-                {visibleFlaggedItems.length === 0 ? (
-                  <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-secondary/30 p-6 text-center">
-                    <CheckCircle2 className="size-8 text-success" aria-hidden="true" />
-                    <p className="font-display text-sm font-semibold text-foreground">
-                      All equipment is in working condition
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      No items are currently flagged for repair or missing.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {visibleFlaggedItems.map((item) => {
-                      const meta = getSafeConditionMeta(item.condition);
-                      const color = getCategoryColor(
-                        item.category,
-                        categories,
-                        item.category_id
-                      );
-                      const metadataParts = [
-                        item.category,
-                        item.location?.trim() || null,
-                        `Qty ${safeNonNegativeInt(item.qty)}`,
-                      ].filter((part): part is string => Boolean(part));
-
-                      return (
-                        <Link
-                          key={item.id}
-                          to={`/inventory?item=${encodeURIComponent(item.id)}`}
-                          style={{ '--card-accent': color } as CSSProperties}
-                          className="card-accent-hover group relative flex items-start justify-between gap-3 overflow-hidden rounded-lg border border-border bg-background/60 p-3 pl-4 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <span
-                            aria-hidden="true"
-                            className="band absolute inset-y-0 left-0 w-1"
-                            style={{ backgroundColor: color }}
-                          />
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <p className="truncate font-display text-sm font-semibold text-foreground group-hover:text-primary">
-                              {item.item}
-                            </p>
-                            <p className="truncate font-mono text-[11px] text-muted-foreground">
-                              {metadataParts.join(' · ')}
-                            </p>
-                            {item.remarks && (
-                              <p className="line-clamp-1 text-xs text-muted-foreground">
-                                {item.remarks}
-                              </p>
-                            )}
-                          </div>
-                          <Badge variant={meta.badgeVariant} className="shrink-0">
-                            {meta.label}
-                          </Badge>
-                        </Link>
-                      );
-                    })}
-
-                    {flaggedItems.length > MAX_ATTENTION_ITEMS && (
-                      <Link
-                        to="/inventory?condition=flagged"
-                        className="group mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 font-mono text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <span>View all {flaggedItems.length} flagged items</span>
-                        <ArrowRight
-                          className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
-                          aria-hidden="true"
-                        />
-                      </Link>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Inventory Health Breakdown (Equipment Type / Rig) */}
+            {/* Chart 1: Which groups need attention? (Sorted Direct-Labeled Readiness Bars) */}
             <Card
               data-testid="dashboard-category-health"
               className="flex flex-col lg:col-span-7"
@@ -953,12 +913,13 @@ export function DashboardPage() {
                   </span>
                   <div>
                     <h2 className="font-display text-base font-semibold leading-tight tracking-tight text-foreground">
-                      Inventory Health Breakdown
+                      Which groups need attention?
                     </h2>
-                    <p className="font-mono text-[11px] text-muted-foreground">
+                    <p className="font-sans text-xs tabular-nums text-muted-foreground">
                       {healthGroupBy === 'type'
                         ? `${formatPluralCount(equipmentTypeHealth.length, 'equipment type', 'equipment types')} tracked`
-                        : `${formatPluralCount(categoryHealth.length, 'category', 'categories')} tracked`}
+                        : `${formatPluralCount(categoryHealth.length, 'category', 'categories')} tracked`}{' '}
+                      · Lowest readiness first
                     </p>
                   </div>
                 </div>
@@ -993,7 +954,7 @@ export function DashboardPage() {
 
                   <Link
                     to={healthGroupBy === 'type' ? '/categories?tab=types' : '/categories'}
-                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-sans text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span>{healthGroupBy === 'type' ? 'Types' : 'Categories'}</span>
                     <ArrowRight
@@ -1006,13 +967,11 @@ export function DashboardPage() {
 
               <CardContent className="flex-1 pt-4">
                 {(() => {
-                  const activeHealthBuckets =
-                    healthGroupBy === 'type' ? equipmentTypeHealth : categoryHealth;
                   const destinationParam = healthGroupBy === 'type' ? 'type' : 'category';
 
-                  if (activeHealthBuckets.length === 0) {
+                  if (sortedHealthBuckets.length === 0) {
                     return (
-                      <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-secondary/30 p-6 text-center">
+                      <div className="flex min-h-[210px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-secondary/30 p-6 text-center">
                         {healthGroupBy === 'type' ? (
                           <Tags className="size-8 text-muted-foreground/60" aria-hidden="true" />
                         ) : (
@@ -1028,52 +987,64 @@ export function DashboardPage() {
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {healthGroupBy === 'type'
-                            ? 'Equipment types and health percentages will appear here.'
-                            : 'Equipment categories and health percentages will appear here.'}
+                            ? 'Equipment types and readiness bars will appear here.'
+                            : 'Equipment categories and readiness bars will appear here.'}
                         </p>
                       </div>
                     );
                   }
 
                   return (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {activeHealthBuckets.map((bucket) => {
+                    <div key={healthGroupBy} className="view-switch-enter space-y-2.5">
+                      {sortedHealthBuckets.map((bucket) => {
                         const barWidth = bucket.itemCount > 0 ? bucket.healthPercent : 0;
 
                         return (
                           <Link
                             key={bucket.key}
                             to={`/inventory?${destinationParam}=${encodeURIComponent(bucket.linkParam)}`}
-                            style={{ '--card-accent': bucket.color } as CSSProperties}
-                            className="card-accent-hover group relative flex flex-col justify-between gap-2.5 overflow-hidden rounded-lg border border-border bg-background/60 p-3.5 pl-4 hover:-translate-y-0.5 hover:bg-accent/50 hover:shadow-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="group block rounded-lg border border-border/80 bg-background/60 px-3.5 py-2.5 transition-colors hover:border-border hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
-                            <span
-                              aria-hidden="true"
-                              className="band absolute inset-y-0 left-0 w-1.5"
-                              style={{ backgroundColor: bucket.color }}
-                            />
-
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                <div className="flex min-w-0 items-center gap-2">
                                   <span
                                     aria-hidden="true"
                                     className="size-2.5 shrink-0 rounded-full"
                                     style={{ backgroundColor: bucket.color }}
                                   />
-                                  <p className="truncate font-display text-sm font-semibold text-foreground group-hover:text-primary">
+                                  <span className="truncate font-display text-sm font-semibold text-foreground group-hover:text-primary">
                                     {bucket.name}
-                                  </p>
+                                  </span>
                                 </div>
-                                <p className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">
+                                <span className="font-sans text-xs tabular-nums text-muted-foreground">
                                   {formatPluralCount(bucket.itemCount, 'item', 'items')} ·{' '}
                                   {formatPluralCount(bucket.unitCount, 'unit', 'units')}
-                                </p>
+                                </span>
                               </div>
 
-                              <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-foreground">
-                                {bucket.itemCount > 0 ? `${bucket.healthPercent}%` : '—'}
-                              </span>
+                              <div className="ml-auto flex shrink-0 items-center gap-2">
+                                {bucket.flaggedCount > 0 && (
+                                  <Badge variant="repair">
+                                    {formatCompactCount(bucket.flaggedCount)} flagged
+                                  </Badge>
+                                )}
+                                {bucket.onLoanUnits > 0 && (
+                                  <Badge variant="loaned">
+                                    {formatCompactCount(bucket.onLoanUnits)} on loan
+                                  </Badge>
+                                )}
+                                {bucket.itemCount > 0 &&
+                                  bucket.flaggedCount === 0 &&
+                                  bucket.onLoanUnits === 0 && (
+                                    <span className="font-sans text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                                      All working
+                                    </span>
+                                  )}
+                                <span className="font-display text-sm font-bold tabular-nums text-foreground">
+                                  {bucket.itemCount > 0 ? `${bucket.healthPercent}%` : '—'}
+                                </span>
+                              </div>
                             </div>
 
                             <div
@@ -1082,7 +1053,7 @@ export function DashboardPage() {
                               aria-valuenow={barWidth}
                               aria-valuemin={0}
                               aria-valuemax={100}
-                              className="h-1.5 w-full overflow-hidden rounded-full bg-secondary"
+                              className="mt-2 h-2 w-full overflow-hidden rounded-full bg-secondary"
                             >
                               <div
                                 className="h-full rounded-full transition-[width] duration-300 ease-out"
@@ -1092,18 +1063,6 @@ export function DashboardPage() {
                                 }}
                               />
                             </div>
-
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                                {bucket.workingCount} working
-                              </span>
-                              {bucket.flaggedCount > 0 && (
-                                <Badge variant="repair">{bucket.flaggedCount} flagged</Badge>
-                              )}
-                              {bucket.onLoanUnits > 0 && (
-                                <Badge variant="loaned">{bucket.onLoanUnits} on loan</Badge>
-                              )}
-                            </div>
                           </Link>
                         );
                       })}
@@ -1112,6 +1071,158 @@ export function DashboardPage() {
                 })()}
               </CardContent>
             </Card>
+
+            {/* Right Column: Check-off Trend Chart + Needs Attention Triage */}
+            <div className="flex flex-col gap-6 lg:col-span-5">
+              {/* Chart 2: Are we checking gear regularly? (14-Day Direct-Labeled Line Chart) */}
+              <Card data-testid="dashboard-checkoff-trend" className="flex flex-col">
+                <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b border-border pb-4">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary"
+                    >
+                      <CalendarCheck2 className="size-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="font-display text-base font-semibold leading-tight tracking-tight text-foreground">
+                        Are we checking gear regularly?
+                      </h2>
+                      <p className="truncate font-sans text-xs tabular-nums text-muted-foreground">
+                        {formatCompactCount(checkOffTrend.totalInWindow)} checked in 14 days · Avg{' '}
+                        {formatCompactCount(checkOffTrend.roundedDailyAverage)}/day
+                      </p>
+                    </div>
+                  </div>
+
+                  <Link
+                    to="/checklist"
+                    className="group inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 font-sans text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span>Checklist</span>
+                    <ArrowRight
+                      className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    />
+                  </Link>
+                </CardHeader>
+
+                <CardContent className="pt-4">
+                  <CheckOffTrendChart trend={checkOffTrend} />
+                </CardContent>
+              </Card>
+
+              {/* Needs Attention Triage Queue */}
+              <Card data-testid="dashboard-needs-attention" className="flex flex-1 flex-col">
+                <CardHeader className="flex-row items-center justify-between space-y-0 border-b border-border pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-red-500/12 text-red-600 dark:text-red-400"
+                    >
+                      <Wrench className="size-4" />
+                    </span>
+                    <div>
+                      <h2 className="font-display text-base font-semibold leading-tight tracking-tight text-foreground">
+                        Needs Attention
+                      </h2>
+                      <p className="font-sans text-xs text-muted-foreground">
+                        {flaggedItems.length > 0
+                          ? `${formatPluralCount(flaggedItems.length, 'item', 'items')} flagged`
+                          : 'All clear'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <Link
+                    to="/inventory?condition=flagged"
+                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-sans text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span>View All</span>
+                    <ArrowRight
+                      className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    />
+                  </Link>
+                </CardHeader>
+
+                <CardContent className="flex-1 pt-4">
+                  {visibleFlaggedItems.length === 0 ? (
+                    <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-secondary/30 p-6 text-center">
+                      <CheckCircle2 className="size-8 text-success" aria-hidden="true" />
+                      <p className="font-display text-sm font-semibold text-foreground">
+                        All equipment is in working condition
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        No items are currently flagged for repair or missing.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2.5">
+                        {visibleFlaggedItems.map((item) => {
+                          const meta = getSafeConditionMeta(item.condition);
+                          const color = getCategoryColor(
+                            item.category,
+                            categories,
+                            item.category_id
+                          );
+                          const metadataParts = [
+                            item.category,
+                            item.location?.trim() || null,
+                            `Qty ${safeNonNegativeInt(item.qty)}`,
+                          ].filter((part): part is string => Boolean(part));
+
+                          return (
+                            <Link
+                              key={item.id}
+                              to={`/inventory?item=${encodeURIComponent(item.id)}`}
+                              style={{ '--card-accent': color } as CSSProperties}
+                              className="card-accent-hover group relative flex items-start justify-between gap-3 overflow-hidden rounded-lg border border-border bg-background/60 p-3 pl-4 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="band absolute inset-y-0 left-0 w-1"
+                                style={{ backgroundColor: color }}
+                              />
+                              <div className="min-w-0 flex-1 space-y-1">
+                                <p className="truncate font-display text-sm font-semibold text-foreground group-hover:text-primary">
+                                  {item.item}
+                                </p>
+                                <p className="truncate font-sans text-xs tabular-nums text-muted-foreground">
+                                  {metadataParts.join(' · ')}
+                                </p>
+                                {item.remarks && (
+                                  <p className="line-clamp-1 text-xs text-muted-foreground">
+                                    {item.remarks}
+                                  </p>
+                                )}
+                              </div>
+                              <Badge variant={meta.badgeVariant} className="shrink-0">
+                                {meta.label}
+                              </Badge>
+                            </Link>
+                          );
+                        })}
+                      </div>
+
+                      {flaggedItems.length > MAX_ATTENTION_ITEMS && (
+                        <Link
+                          to="/inventory?condition=flagged"
+                          className="group mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <span>View all {flaggedItems.length} flagged items</span>
+                          <ArrowRight
+                            className="size-3.5 transition-[transform,translate] duration-150 ease-out group-hover:translate-x-0.5"
+                            aria-hidden="true"
+                          />
+                        </Link>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
 
           {/* Member & Admin Operational Panels (Strictly Hidden from Guests) */}
@@ -1142,7 +1253,7 @@ export function DashboardPage() {
 
                   <Link
                     to="/loans"
-                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-sans text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span>Manage Loans</span>
                     <ArrowRight
@@ -1154,15 +1265,7 @@ export function DashboardPage() {
 
                 <CardContent className="flex-1 pt-4">
                   {isLoadingLoans ? (
-                    <div
-                      role="status"
-                      className="flex min-h-[160px] items-center justify-center gap-2 text-muted-foreground"
-                    >
-                      <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
-                      <span className="font-mono text-xs uppercase tracking-wider">
-                        Loading active loans...
-                      </span>
-                    </div>
+                    <FeedListSkeleton label="Loading active loans..." rows={3} compact />
                   ) : isLoansError ? (
                     <PanelErrorBox
                       title="Unable to load active loans"
@@ -1180,7 +1283,7 @@ export function DashboardPage() {
                       </p>
                       <Link
                         to="/loans"
-                        className="rounded font-mono text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="rounded font-sans text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         Check out gear →
                       </Link>
@@ -1197,7 +1300,7 @@ export function DashboardPage() {
                             key={loan.id}
                             to="/loans"
                             className={cn(
-                              'flex items-start justify-between gap-3 rounded-lg border border-border bg-background/60 p-3 transition-colors hover:border-primary/40 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                              'card-accent-hover flex items-start justify-between gap-3 rounded-lg border border-border bg-background/60 p-3 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                               overdue && 'border-red-500/35 bg-destructive/5'
                             )}
                           >
@@ -1212,7 +1315,7 @@ export function DashboardPage() {
                               <p className="truncate text-xs font-medium text-foreground">
                                 {loan.borrower_name}
                               </p>
-                              <p className="font-mono text-[11px] text-muted-foreground">
+                              <p className="font-sans text-xs tabular-nums text-muted-foreground">
                                 {loan.due_date
                                   ? `Due ${formatDisplayDate(loan.due_date)}`
                                   : 'No due date'}
@@ -1225,7 +1328,7 @@ export function DashboardPage() {
                       {sortedActiveLoans.length > MAX_ACTIVE_LOANS && (
                         <Link
                           to="/loans"
-                          className="group mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 font-mono text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="group mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <span>View all {sortedActiveLoans.length} active loans</span>
                           <ArrowRight
@@ -1253,7 +1356,7 @@ export function DashboardPage() {
                       <h2 className="font-display text-base font-semibold leading-tight tracking-tight text-foreground">
                         Recent Activity
                       </h2>
-                      <p className="font-mono text-[11px] text-muted-foreground">
+                      <p className="font-sans text-xs text-muted-foreground">
                         Latest audit trail events
                       </p>
                     </div>
@@ -1261,7 +1364,7 @@ export function DashboardPage() {
 
                   <Link
                     to="/activity"
-                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group inline-flex items-center gap-1 rounded-md px-2 py-1 font-sans text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span>View Full Log</span>
                     <ArrowRight
@@ -1273,15 +1376,7 @@ export function DashboardPage() {
 
                 <CardContent className="flex-1 pt-4">
                   {isLoadingActivity ? (
-                    <div
-                      role="status"
-                      className="flex min-h-[160px] items-center justify-center gap-2 text-muted-foreground"
-                    >
-                      <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
-                      <span className="font-mono text-xs uppercase tracking-wider">
-                        Loading recent activity...
-                      </span>
-                    </div>
+                    <FeedListSkeleton label="Loading recent activity..." rows={3} compact />
                   ) : isActivityError ? (
                     <PanelErrorBox
                       title="Unable to load recent activity"
@@ -1311,7 +1406,7 @@ export function DashboardPage() {
                             key={entry.id}
                             to="/activity"
                             className={cn(
-                              'block rounded-lg border border-border bg-background/60 p-3 transition-colors hover:border-primary/40 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                              'card-accent-hover block rounded-lg border border-border bg-background/60 p-3 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                               entry.undone && 'opacity-60'
                             )}
                           >
@@ -1320,7 +1415,7 @@ export function DashboardPage() {
                                 <Badge variant={actionMeta.badgeVariant}>{actionMeta.label}</Badge>
                                 {entry.undone && <Badge variant="outline">Undone</Badge>}
                               </div>
-                              <span className="font-mono text-[11px] text-muted-foreground">
+                              <span className="font-sans text-xs tabular-nums text-muted-foreground">
                                 {formatShortTimestamp(entry.timestamp)}
                               </span>
                             </div>
@@ -1341,7 +1436,7 @@ export function DashboardPage() {
                             >
                               {summary}
                             </p>
-                            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                            <p className="mt-1 font-sans text-xs text-muted-foreground">
                               by <span className="font-semibold text-foreground">{actorName}</span>
                             </p>
                           </Link>

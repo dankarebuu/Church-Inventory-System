@@ -3,7 +3,7 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* =========================================================
-   WINGMACC BAND INVENTORY — DESIGN TOKENS
+   STEWARD — WIN-GMA EQUIPMENT OPS DESIGN TOKENS
    Light (:root) and Modern Slate Dark ([data-theme="dark"])
    ========================================================= */
 :root {
@@ -20,13 +20,15 @@
 
   /* Typography */
   --white: #0F172A;      /* Primary text (Charcoal) */
-  --muted: #64748B;
-  --muted-2: #94A3B8;
+  --muted: #475569;      /* Slate-600: >=4.5:1 across card (#FFF) and secondary (#F1F5F9) */
+  --muted-2: #64748B;
   --sync-text: #334155;
 
   /* Brand & Status */
   --amber: #2563EB;
   --amber-hover: #1D4ED8;
+  --primary-fill: #2563EB;
+  --destructive-fill: #DC2626;
   --green: #059669;
   --red: #DC2626;
   --blue: #1D4ED8;
@@ -36,6 +38,11 @@
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05);
   --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.06);
   --shadow-modal: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+
+  /* Scrollbar */
+  --scrollbar-thumb: rgba(100, 116, 139, 0.32);
+  --scrollbar-thumb-hover: rgba(71, 85, 105, 0.54);
+  --scrollbar-thumb-active: var(--amber);
 
   --radius: 0.75rem;
 }
@@ -59,8 +66,10 @@
   --sync-text: #CBD5E1;
 
   /* Brand & Status */
-  --amber: #3B82F6;      /* Electric royal blue */
-  --amber-hover: #2563EB;
+  --amber: #3B82F6;      /* Electric royal blue (4.84:1 on dark card surfaces) */
+  --amber-hover: #1D4ED8;
+  --primary-fill: #2563EB; /* >=5.1:1 contrast with #FFFFFF button/badge text */
+  --destructive-fill: #DC2626; /* >=4.8:1 contrast with #FFFFFF text */
   --green: #10B981;
   --red: #EF4444;
   --blue: #3B82F6;
@@ -70,6 +79,11 @@
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+
+  /* Scrollbar */
+  --scrollbar-thumb: rgba(148, 163, 184, 0.26);
+  --scrollbar-thumb-hover: rgba(148, 163, 184, 0.46);
+  --scrollbar-thumb-active: var(--amber);
 }
 
 @theme inline {
@@ -84,6 +98,7 @@
   --color-popover: var(--panel);
   --color-popover-foreground: var(--white);
   --color-primary: var(--amber);
+  --color-primary-fill: var(--primary-fill);
   --color-primary-foreground: #FFFFFF;
   --color-secondary: var(--panel-2);
   --color-secondary-foreground: var(--white);
@@ -92,6 +107,7 @@
   --color-accent: var(--panel-2);
   --color-accent-foreground: var(--white);
   --color-destructive: var(--red);
+  --color-destructive-fill: var(--destructive-fill);
   --color-destructive-foreground: #FFFFFF;
   --color-border: var(--line);
   --color-input: var(--input-border);
@@ -121,6 +137,8 @@
   --animate-overlay-out: overlay-out 130ms ease-in forwards;
   --animate-dialog-in: dialog-in 180ms ease-out;
   --animate-dialog-out: dialog-out 140ms ease-in forwards;
+  --animate-page-in: page-in 210ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-panel-in: panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-sheet-in-right: sheet-in-right 220ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-sheet-out-right: sheet-out-right 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
   --animate-sheet-in-left: sheet-in-left 220ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -129,6 +147,28 @@
   --animate-sheet-out-top: sheet-out-top 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
   --animate-sheet-in-bottom: sheet-in-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-sheet-out-bottom: sheet-out-bottom 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes overlay-in {
@@ -269,10 +309,58 @@
 
   html {
     background: var(--bg);
-    color-scheme: light;
-    transition: background-color 0.25s ease;
+    color-scheme: light dark;
+    accent-color: var(--amber);
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: contain;
+    /* Keep keyboard-focused elements clear of the 64px top bar and mobile bottom nav. */
+    scroll-padding-top: 5rem;
+    scroll-padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
   }
 
+  :where(*:not(.scrollbar-none)) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: var(--scrollbar-thumb);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-active);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  @media (min-width: 768px) {
+    html {
+      scroll-padding-bottom: 1.5rem;
+    }
+  }
+
+  :root:has(> head > meta[name="color-scheme"][content="light"]),
+  [data-theme="light"] {
+    color-scheme: light;
+  }
+
+  :root:has(> head > meta[name="color-scheme"][content="dark"]),
   [data-theme="dark"] {
     color-scheme: dark;
   }
@@ -282,8 +370,74 @@
     background: var(--bg);
     color: var(--white);
     font-family: var(--font-sans);
+    overflow-wrap: break-word;
+    overscroll-behavior-y: contain;
     -webkit-font-smoothing: antialiased;
-    transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+  }
+
+  @media (pointer: coarse) {
+    input,
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p,
+  li {
+    text-wrap: pretty;
+  }
+
+  :where(code) {
+    overflow-wrap: anywhere;
+  }
+
+  /* Freeze unrelated transitions strictly during synchronous View Transition snapshots. */
+  [data-theme-switching="true"] *,
+  [data-theme-switching="true"] *::before,
+  [data-theme-switching="true"] *::after {
+    transition-duration: 0ms !important;
+  }
+
+  /* Native circular ripple View Transition when switching Light <-> Dark theme. */
+  html[data-theme-transition="ripple"]::view-transition-old(root),
+  html[data-theme-transition="ripple"]::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+
+  html[data-theme-transition="ripple"]::view-transition-new(root) {
+    z-index: 2147483647;
+  }
+
+  /* Graceful cross-fade fallback when View Transitions are unavailable. */
+  @media (prefers-reduced-motion: no-preference) {
+    html[data-theme-transition="fade"],
+    html[data-theme-transition="fade"] body,
+    html[data-theme-transition="fade"] aside,
+    html[data-theme-transition="fade"] header,
+    html[data-theme-transition="fade"] nav,
+    html[data-theme-transition="fade"] main,
+    html[data-theme-transition="fade"] [data-slot="card"],
+    html[data-theme-transition="fade"] [data-slot="badge"],
+    html[data-theme-transition="fade"] [data-slot="button"] {
+      transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+      transition-duration: 240ms;
+      transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    }
   }
 }
 
@@ -305,35 +459,167 @@
     outline-color: rgba(248, 250, 252, 0.12);
   }
 
-  .card-accent-hover {
-    transition:
-      background-color 150ms ease-out,
-      border-color 150ms ease-out,
-      box-shadow 150ms ease-out,
-      transform 150ms ease-out,
-      translate 150ms ease-out;
+  .scrollbar-none {
+    scrollbar-width: none;
   }
 
-  .card-accent-hover:not([data-selected="true"]):hover {
-    border-color: color-mix(in srgb, var(--card-accent, var(--amber)) 45%, var(--line));
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .skeleton-shimmer {
+    background-color: color-mix(in srgb, var(--panel-2) 85%, transparent);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .skeleton-shimmer {
+      background-image: linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in srgb, var(--panel) 60%, transparent) 50%,
+        transparent 100%
+      );
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.6s ease-in-out infinite;
+    }
+
+    .page-enter {
+      animation: var(--animate-page-in);
+    }
+
+    .tab-panel-animate[data-state="active"],
+    .view-switch-enter {
+      animation: var(--animate-panel-in);
+    }
+  }
+
+  .card-accent-hover {
+    transition:
+      background-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      translate 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .card-accent-hover:not([data-selected="true"]):hover {
+      border-color: color-mix(in srgb, var(--card-accent, var(--amber)) 45%, var(--line));
+      box-shadow: var(--shadow-hover);
+      translate: 0 -2px;
+    }
+  }
+
+  @media (hover: none) {
+    .card-accent-hover:hover {
+      --tw-translate-y: 0;
+      translate: none;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .mobile-table-card-cell[data-label]::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 2px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+  }
+
+  /* Horizontal table scrollability edge fade when content extends beyond the scrollport. */
+  .table-scroll-region {
+    --table-fade-start: 0px;
+    --table-fade-end: 0px;
+    scroll-padding-inline: 1.75rem;
+  }
+
+  @supports (animation-timeline: scroll(self inline)) {
+    .table-scroll-region {
+      mask:
+        linear-gradient(black, black) no-clip subtract,
+        linear-gradient(to right, black, transparent) 0 0 / var(--table-fade-start) 100% no-repeat no-clip,
+        linear-gradient(to right, transparent, black) 100% 0 / var(--table-fade-end) 100% no-repeat no-clip;
+      animation: table-reveal-start linear both, table-hide-end linear both;
+      animation-timeline: scroll(self inline);
+      animation-range: 0 2rem, calc(100% - 2rem) 100%;
+    }
+  }
+}
+
+@property --table-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --table-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes table-reveal-start {
+  to {
+    --table-fade-start: 1.75rem;
+  }
+}
+
+@keyframes table-hide-end {
+  from {
+    --table-fade-end: 1.75rem;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid ButtonText !important;
+    outline-offset: 2px;
+  }
+
+  .band {
+    background-color: Highlight !important;
+    forced-color-adjust: none;
+  }
+
+  .skeleton-shimmer {
+    border: 1px solid GrayText !important;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  ::before,
-  ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
+  html {
+    scroll-behavior: auto;
   }
 
+  .skeleton-shimmer,
+  .page-enter,
+  .tab-panel-animate[data-state="active"],
+  .view-switch-enter,
   [data-slot="dialog-overlay"][data-state="open"],
   [data-slot="dialog-content"][data-state="open"],
   [data-slot="sheet-overlay"][data-state="open"],
-  [data-slot="sheet-content"][data-state="open"] {
+  [data-slot="sheet-content"][data-state="open"],
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
     animation: none !important;
+  }
+
+  .animate-spin {
+    animation-duration: 2s;
   }
 
   .card-accent-hover:hover,
@@ -345,6 +631,7 @@
   }
 
   [data-slot="button"]:active,
+  [data-slot="tabs-trigger"]:active,
   [class*="active:scale"]:active {
     --tw-scale-x: 1 !important;
     --tw-scale-y: 1 !important;

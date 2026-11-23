@@ -6,6 +6,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { BRAND } from '@/lib/branding';
 import { useAuth } from './useAuth';
 
 export function WelcomeGateway() {
@@ -31,22 +32,23 @@ export function WelcomeGateway() {
       >
         <img
           src="/images/logo.svg"
-          alt="WINGMACC logo"
-          className="mx-auto mb-5 block h-auto w-24 rounded-2xl"
+          alt={BRAND.logoAlt}
+          className="mx-auto mb-4 block size-20 rounded-full"
         />
 
-        <span className="tape mx-auto mb-2.5 inline-block w-fit justify-self-center rounded-md bg-primary px-2.5 py-1 font-mono text-[11px] font-semibold tracking-[0.08em] text-primary-foreground">
-          CHURCH PROPERTY INVENTORY LOG
-        </span>
-
         <DialogTitle asChild>
-          <h1 className="font-display mt-2 mb-1 text-3xl font-bold uppercase leading-tight text-foreground sm:text-4xl">
-            Band Inventory
+          <h1 className="font-display text-3xl font-bold leading-tight tracking-tight text-foreground sm:text-4xl">
+            {BRAND.appName}
           </h1>
         </DialogTitle>
 
-        <DialogDescription className="mb-7 font-mono text-xs text-muted-foreground sm:text-[13px]">
-          Band Department Inventory System
+        <p className="mt-1 font-sans text-xs font-semibold tracking-wide text-primary">
+          {BRAND.workspaceLabel}
+        </p>
+
+        <DialogDescription className="mb-7 mt-3 space-y-0.5 font-sans text-xs text-muted-foreground sm:text-[13px]">
+          <span className="block font-medium text-foreground/85">{BRAND.churchFullName}</span>
+          <span className="block text-muted-foreground">{BRAND.churchTagline}</span>
         </DialogDescription>
 
         <div className="flex flex-col items-stretch gap-3">

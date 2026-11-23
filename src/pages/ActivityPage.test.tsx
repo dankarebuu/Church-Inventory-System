@@ -263,4 +263,43 @@ describe('ActivityPage', () => {
       onLineSpy.mockRestore();
     }
   });
+
+  it('renders Load Older Activity button when hasMore is true and invokes loadMore on click', async () => {
+    const user = userEvent.setup();
+    const loadMoreSpy = vi.fn();
+    mockUseAuth.mockReturnValue(makeAuthValue('member'));
+    mockUseActivityLog.mockReturnValue({
+      entries: sampleEntries,
+      hasMore: true,
+      loadMore: loadMoreSpy,
+      isFetchingMore: false,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      restoreDeletedItem: mockRestoreDeletedItem,
+      undoHistoryEntry: mockUndoHistoryEntry,
+      isRestoring: false,
+      isUndoing: false,
+      pendingEntryId: null,
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <ActivityPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    const loadMoreBtn = screen.getByRole('button', { name: /load older activity/i });
+    expect(loadMoreBtn).toBeEnabled();
+
+    await user.click(loadMoreBtn);
+    expect(loadMoreSpy).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,32 +1,24 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { User } from '@supabase/supabase-js';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeftRight,
   ChevronDown,
-  ClipboardCheck,
   Eye,
-  FolderTree,
-  History,
-  LayoutDashboard,
   LogIn,
   LogOut,
-  Menu,
   Moon,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
   Settings,
-  Shield,
   ShieldCheck,
   Sun,
   UserCheck,
-  type LucideIcon,
 } from 'lucide-react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { BRAND } from '@/lib/branding';
 import {
   CommandDialog,
   CommandEmpty,
@@ -45,13 +37,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { AccountSettingsDialog } from '@/features/auth/AccountSettingsDialog';
 import { useAuth } from '@/features/auth/useAuth';
 import { useOfflineCatalogSync } from '@/hooks/useOfflineCatalogSync';
@@ -62,78 +47,21 @@ import {
   OFFLINE_CACHE_UPDATED_EVENT,
 } from '@/lib/offlineCache';
 import { queryKeys } from '@/lib/queryKeys';
-import { cn, getInitials, getUserEmailPrefix } from '@/lib/utils';
-import type { ItemCondition, ProfileRecord, UserRole } from '@/types/database';
+import { cn } from '@/lib/utils';
+import type { ItemCondition, UserRole } from '@/types/database';
 import { MobileBottomNav } from './MobileBottomNav';
+import { MobileMenuSheet } from './MobileMenuSheet';
 import { OfflineBanner } from './OfflineBanner';
+import {
+  APP_NAV_ITEMS,
+  deriveUserDisplay,
+  getSyncTooltip,
+  ROLE_LABELS,
+  SYNC_DOT_CLASSES,
+  type AppNavItem,
+} from './navConfig';
 
-export interface AppNavItem {
-  id: string;
-  label: string;
-  to: string;
-  icon: LucideIcon;
-  allowedRoles: readonly UserRole[];
-  description: string;
-}
-
-export const APP_NAV_ITEMS: readonly AppNavItem[] = [
-  {
-    id: 'dashboard',
-    label: 'Dashboard',
-    to: '/dashboard',
-    icon: LayoutDashboard,
-    allowedRoles: ['guest', 'member', 'admin'],
-    description: 'KPIs, flagged equipment, and category breakdown',
-  },
-  {
-    id: 'inventory',
-    label: 'Inventory',
-    to: '/inventory',
-    icon: Package,
-    allowedRoles: ['guest', 'member', 'admin'],
-    description: 'Browse, filter, inspect, and manage band gear',
-  },
-  {
-    id: 'categories',
-    label: 'Categories & Locations',
-    to: '/categories',
-    icon: FolderTree,
-    allowedRoles: ['guest', 'member', 'admin'],
-    description: 'Organize equipment categories and storage rooms',
-  },
-  {
-    id: 'checklist',
-    label: 'Sunday Checklist',
-    to: '/checklist',
-    icon: ClipboardCheck,
-    allowedRoles: ['guest', 'member', 'admin'],
-    description: 'Live Sunday check-off and printable checklist sheet',
-  },
-  {
-    id: 'loans',
-    label: 'Loans & Check-Out',
-    to: '/loans',
-    icon: ArrowLeftRight,
-    allowedRoles: ['member', 'admin'],
-    description: 'Track active check-outs, due dates, and returns',
-  },
-  {
-    id: 'activity',
-    label: 'Activity Log',
-    to: '/activity',
-    icon: History,
-    allowedRoles: ['member', 'admin'],
-    description: 'Audit trail, undo actions, and item restoration',
-  },
-  {
-    id: 'team',
-    label: 'Team Roles',
-    to: '/team',
-    icon: Shield,
-    allowedRoles: ['admin'],
-    description: 'Manage Band Member and Admin access permissions',
-  },
-];
+export { APP_NAV_ITEMS, type AppNavItem };
 
 interface SearchableInventoryItem {
   id: string;
@@ -145,20 +73,6 @@ interface SearchableInventoryItem {
   condition?: ItemCondition;
   deleted_at?: string | null;
 }
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  guest: 'Guest (View Only)',
-  member: 'Band Member',
-  admin: 'Admin',
-};
-
-const SYNC_DOT_CLASSES: Record<RealtimeSyncStatus['status'], string> = {
-  connected: 'bg-success',
-  connecting: 'bg-primary animate-pulse',
-  error: 'bg-destructive',
-  offline: 'bg-muted-foreground',
-  idle: 'bg-muted-foreground',
-};
 
 function isItemCondition(value: unknown): value is ItemCondition {
   return value === 'working' || value === 'repair' || value === 'missing';
@@ -184,31 +98,6 @@ function readCachedInventoryItems(
   return cached.filter(isSearchableInventoryItem);
 }
 
-function deriveUserDisplay(
-  profile: ProfileRecord | null,
-  user: User | null
-): { displayName: string; email: string; initials: string } {
-  const profileName = [profile?.first_name, profile?.last_name]
-    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
-    .join(' ')
-    .trim();
-
-  const meta = user?.user_metadata ?? {};
-  const metaFirst = typeof meta.first_name === 'string' ? meta.first_name.trim() : '';
-  const metaLast = typeof meta.last_name === 'string' ? meta.last_name.trim() : '';
-  const metaCombined = [metaFirst, metaLast].filter(Boolean).join(' ').trim();
-  const metaFull =
-    typeof meta.full_name === 'string' && meta.full_name.trim()
-      ? meta.full_name.trim()
-      : metaCombined;
-
-  const email = profile?.email ?? user?.email ?? '';
-  const displayName = profileName || metaFull || getUserEmailPrefix(email);
-  const initials = getInitials(displayName || email);
-
-  return { displayName, email, initials };
-}
-
 function getShortcutLabel(): string {
   if (typeof navigator !== 'undefined') {
     const ua = navigator.platform || navigator.userAgent;
@@ -219,30 +108,66 @@ function getShortcutLabel(): string {
   return 'Ctrl+K';
 }
 
-function SidebarBrand({ collapsed = false }: { collapsed?: boolean }) {
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'wingmacc:sidebar-collapsed';
+const BASE_DOCUMENT_TITLE = BRAND.fullTitle;
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistSidebarCollapsed(collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+  } catch {
+    // Storage unavailable (private mode / quota) — preference is session-only.
+  }
+}
+
+function getRouteTitle(pathname: string): string {
+  const match = APP_NAV_ITEMS.find(
+    (item) => pathname === item.to || pathname.startsWith(`${item.to}/`)
+  );
+  return match ? `${match.label} · ${BASE_DOCUMENT_TITLE}` : BASE_DOCUMENT_TITLE;
+}
+
+function SidebarBrand({
+  collapsed = false,
+  onNavigate,
+}: {
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) {
   return (
-    <div
+    <Link
+      to="/dashboard"
+      onClick={onNavigate}
+      aria-label={collapsed ? `${BRAND.fullTitle} — Go to Dashboard` : undefined}
+      title={collapsed ? 'Go to Dashboard' : undefined}
       className={cn(
-        'flex items-center gap-3',
-        collapsed ? 'justify-center px-2 py-1' : 'px-1 py-1'
+        'flex min-w-0 items-center gap-2 rounded-lg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        collapsed ? 'justify-center px-2 py-1' : 'flex-1 py-0.5'
       )}
     >
       <img
         src="/images/logo.svg"
-        alt="WINGMACC logo"
-        className="size-10 shrink-0 rounded-xl border border-border/60 bg-background p-1"
+        alt={BRAND.logoAlt}
+        className="size-9 shrink-0 rounded-full"
       />
       {!collapsed && (
         <div className="min-w-0">
-          <span className="tape inline-block rounded bg-primary px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-primary-foreground">
-            CHURCH PROPERTY INVENTORY LOG
-          </span>
-          <p className="font-display mt-1 truncate text-base font-bold leading-tight text-foreground">
-            Band Inventory
+          <p className="font-display truncate text-[17px] font-bold leading-tight tracking-tight text-foreground">
+            {BRAND.appName}
+          </p>
+          <p className="mt-0.5 truncate font-sans text-[10.5px] font-medium leading-tight tracking-[-0.01em] text-muted-foreground">
+            {BRAND.workspaceLabel}
           </p>
         </div>
       )}
-    </div>
+    </Link>
   );
 }
 
@@ -268,7 +193,7 @@ function SidebarNav({
             aria-label={collapsed ? item.label : undefined}
             className={({ isActive }) =>
               cn(
-                'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-[background-color,color] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-[background-color,color,transform] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 collapsed && 'justify-center px-2',
                 isActive
                   ? 'bg-primary/12 text-primary font-semibold'
@@ -276,7 +201,10 @@ function SidebarNav({
               )
             }
           >
-            <Icon className="size-4 shrink-0" aria-hidden="true" />
+            <Icon
+              className="size-4 shrink-0 transition-transform duration-150 ease-out group-hover:scale-105"
+              aria-hidden="true"
+            />
             {!collapsed && <span className="truncate">{item.label}</span>}
           </NavLink>
         );
@@ -298,32 +226,12 @@ function RoleSummaryPill({ role, collapsed = false }: { role: UserRole; collapse
     >
       <Icon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
       {!collapsed && (
-        <span className="truncate font-mono text-[11px] font-medium text-foreground">
+        <span className="truncate font-sans text-xs font-medium text-foreground">
           {ROLE_LABELS[role]}
         </span>
       )}
     </div>
   );
-}
-
-function getSyncTooltip(syncStatus: RealtimeSyncStatus, role: UserRole): string {
-  if (syncStatus.status === 'offline') {
-    return role === 'guest'
-      ? 'Offline — catalog sync paused'
-      : 'Offline — realtime sync paused';
-  }
-  if (syncStatus.status === 'error') {
-    return 'Realtime connection issue — data refreshes on navigation';
-  }
-  if (syncStatus.status === 'connecting') {
-    return role === 'guest'
-      ? 'Connecting to live category & location updates...'
-      : 'Connecting to live Realtime sync...';
-  }
-  if (role === 'guest') {
-    return 'Categories & locations sync live; inventory availability refreshes on tab focus and every 60s.';
-  }
-  return 'Connected to live Realtime updates across inventory, loans, and activity.';
 }
 
 function RealtimeStatusPill({
@@ -339,7 +247,7 @@ function RealtimeStatusPill({
       aria-live="polite"
       aria-label={`Realtime sync: ${syncStatus.label}`}
       title={getSyncTooltip(syncStatus, role)}
-      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[11px] font-medium text-sync-text shadow-xs"
+      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 font-sans text-[11px] font-medium text-sync-text shadow-xs"
     >
       <span
         className={cn('size-2 rounded-full', SYNC_DOT_CLASSES[syncStatus.status])}
@@ -356,7 +264,7 @@ function UserAccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   if (!user) {
     return (
       <div className="flex items-center gap-2">
-        <Badge variant="outline" className="hidden gap-1 sm:inline-flex">
+        <Badge variant="outline" className="hidden gap-1 lg:inline-flex">
           <Eye className="size-3" aria-hidden="true" />
           <span>View Only</span>
         </Badge>
@@ -379,7 +287,7 @@ function UserAccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
           className="h-9 gap-2 rounded-full px-2 sm:rounded-lg"
           aria-label="Account menu"
         >
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 font-mono text-xs font-bold text-primary">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-xs font-bold text-primary">
             {initials}
           </span>
           <span className="hidden max-w-[140px] truncate text-sm font-medium text-foreground sm:inline">
@@ -394,7 +302,7 @@ function UserAccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
           <div className="flex flex-col gap-0.5">
             <span className="truncate text-sm font-semibold text-foreground">{displayName}</span>
             {email && <span className="truncate text-xs text-muted-foreground">{email}</span>}
-            <span className="mt-1 inline-flex w-fit rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+            <span className="mt-1 inline-flex w-fit rounded bg-primary/10 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-primary">
               {ROLE_LABELS[role]}
             </span>
           </div>
@@ -430,10 +338,14 @@ export function AppShell({ children }: { children?: ReactNode }) {
     theme,
     toggleTheme,
     user,
+    profile,
+    openAuthModal,
+    signOut,
     showGateway,
     isAuthModalOpen,
   } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { isOnline, isOffline } = useOnlineStatus();
   const cacheUserId = role === 'guest' ? null : (user?.id ?? null);
@@ -448,7 +360,11 @@ export function AppShell({ children }: { children?: ReactNode }) {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(() =>
     getOfflineSnapshotSavedAt(cacheUserId)
   );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsedState] = useState<boolean>(readSidebarCollapsed);
+  const setSidebarCollapsed = (collapsed: boolean) => {
+    setSidebarCollapsedState(collapsed);
+    persistSidebarCollapsed(collapsed);
+  };
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -476,12 +392,28 @@ export function AppShell({ children }: { children?: ReactNode }) {
   }, [user]);
 
   useEffect(() => {
+    document.title = getRouteTitle(location.pathname);
+  }, [location.pathname]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      const isPaletteShortcut =
+        (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
+      // "/" opens search when the user isn't already typing somewhere.
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        !!target &&
+        (target.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+      const isSlashShortcut =
+        event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !isTyping;
+
+      if (isPaletteShortcut || isSlashShortcut) {
         if (showGateway || isAuthModalOpen || settingsOpen) return;
+        if (isSlashShortcut && document.querySelector('[role="dialog"]')) return;
         event.preventDefault();
         setMobileNavOpen(false);
-        setCommandOpen((prev) => !prev);
+        setCommandOpen((prev) => (isSlashShortcut ? true : !prev));
       }
     };
 
@@ -516,7 +448,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
           sidebarCollapsed ? 'md:w-[74px]' : 'md:w-64'
         )}
       >
-        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-4">
+        <div className="flex h-16 items-center justify-between gap-1.5 border-b border-border px-3">
           <SidebarBrand collapsed={sidebarCollapsed} />
           {!sidebarCollapsed && (
             <Button
@@ -526,7 +458,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
               onClick={() => setSidebarCollapsed(true)}
               aria-label="Collapse sidebar"
               aria-expanded={true}
-              className="size-8 shrink-0 text-muted-foreground"
+              className="size-7 shrink-0 text-muted-foreground"
             >
               <PanelLeftClose className="size-4" aria-hidden="true" />
             </Button>
@@ -558,58 +490,36 @@ export function AppShell({ children }: { children?: ReactNode }) {
         </div>
       </aside>
 
-      {/* Mobile Drawer Navigation */}
-      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="no-print flex w-72 flex-col gap-0 p-0">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Navigation Menu</SheetTitle>
-            <SheetDescription>Navigate WINGMACC Band Inventory pages</SheetDescription>
-          </SheetHeader>
-
-          <div className="border-b border-border px-4 py-4 pr-12">
-            <SidebarBrand />
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-3 py-4">
-            <SidebarNav
-              items={visibleNavItems}
-              onNavigate={() => setMobileNavOpen(false)}
-            />
-          </div>
-
-          <div className="border-t border-border p-3">
-            <RoleSummaryPill role={role} />
-          </div>
-        </SheetContent>
-      </Sheet>
+      {/* Mobile Native Bottom-Sheet Navigation */}
+      <MobileMenuSheet
+        open={mobileNavOpen}
+        onOpenChange={setMobileNavOpen}
+        items={visibleNavItems}
+        role={role}
+        user={user}
+        profile={profile}
+        syncStatus={syncStatus}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenLogin={() => openAuthModal('login')}
+        onSignOut={() => void signOut()}
+      />
 
       {/* Main Column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-border bg-topbar px-4 backdrop-blur-md transition-[background-color,border-color] duration-200 sm:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="shrink-0 md:hidden"
-              onClick={() => setMobileNavOpen(true)}
-              aria-label="Open navigation menu"
-            >
-              <Menu className="size-5" aria-hidden="true" />
-            </Button>
-
+        <header className="no-print sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b border-border bg-topbar px-3.5 backdrop-blur-md transition-[background-color,border-color] duration-200 sm:gap-3 sm:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
             <Button
               type="button"
               variant="outline"
               onClick={() => setCommandOpen(true)}
               aria-label="Open quick search"
-              className="h-9 w-full max-w-xs justify-between gap-2 border-input bg-background/80 px-3 text-muted-foreground hover:bg-accent hover:text-foreground sm:w-64 md:w-72"
+              className="h-9 min-w-0 max-w-md flex-1 shrink justify-between gap-2 border-input bg-background/80 px-3 text-muted-foreground hover:bg-accent hover:text-foreground sm:max-w-72"
             >
               <span className="flex min-w-0 items-center gap-2 text-xs sm:text-sm">
                 <Search className="size-4 shrink-0" aria-hidden="true" />
                 <span className="truncate">Search gear or pages...</span>
               </span>
-              <kbd className="hidden shrink-0 rounded border border-border bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-flex">
+              <kbd className="hidden shrink-0 rounded border border-border bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground lg:inline-flex">
                 {shortcutLabel}
               </kbd>
             </Button>
@@ -622,14 +532,15 @@ export function AppShell({ children }: { children?: ReactNode }) {
               type="button"
               variant="ghost"
               size="icon"
+              data-theme-toggle=""
               onClick={toggleTheme}
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              className="relative overflow-hidden"
+              className="relative size-10 overflow-hidden active:scale-90 md:size-9"
             >
               <Sun
                 className={cn(
-                  'size-4 transition-[transform,rotate,scale,opacity] duration-200 ease-out',
+                  'size-4 transition-[transform,rotate,scale,opacity] duration-250 ease-out',
                   theme === 'dark'
                     ? 'rotate-0 scale-100 opacity-100'
                     : '-rotate-90 scale-75 opacity-0'
@@ -638,7 +549,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
               />
               <Moon
                 className={cn(
-                  'absolute size-4 transition-[transform,rotate,scale,opacity] duration-200 ease-out',
+                  'absolute size-4 transition-[transform,rotate,scale,opacity] duration-250 ease-out',
                   theme === 'dark'
                     ? 'rotate-90 scale-75 opacity-0'
                     : 'rotate-0 scale-100 opacity-100'
@@ -656,9 +567,11 @@ export function AppShell({ children }: { children?: ReactNode }) {
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 px-4 pt-6 pb-24 focus:outline-none sm:px-6 md:pb-6 lg:px-8"
+          className="flex-1 px-4 pt-5 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] focus:outline-none sm:px-6 sm:pt-6 md:pb-8 lg:px-8"
         >
-          {children !== undefined ? children : <Outlet />}
+          <div key={location.pathname} className="page-enter">
+            {children !== undefined ? children : <Outlet />}
+          </div>
         </main>
 
         <MobileBottomNav
@@ -710,7 +623,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
                       <div className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate font-medium">{item.item}</span>
                         {subtitle && (
-                          <span className="truncate font-mono text-[11px] text-muted-foreground">
+                          <span className="truncate font-sans text-[11px] text-muted-foreground">
                             {subtitle}
                           </span>
                         )}

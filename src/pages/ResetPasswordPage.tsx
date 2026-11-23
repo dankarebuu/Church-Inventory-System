@@ -11,8 +11,10 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { FormCardSkeleton } from '@/components/ui/skeleton';
 import { PasswordInput } from '@/features/auth/PasswordInput';
 import { useAuth } from '@/features/auth/useAuth';
+import { BRAND } from '@/lib/branding';
 import { supabase } from '@/lib/supabase';
 
 export function ResetPasswordPage() {
@@ -65,25 +67,27 @@ export function ResetPasswordPage() {
         <CardHeader className="items-center text-center">
           <img
             src="/images/logo.svg"
-            alt="WINGMACC logo"
-            className="mb-2 size-14 rounded-xl"
+            alt={BRAND.logoAlt}
+            className="mb-3 size-14 rounded-full"
           />
-          <span className="tape mb-1 inline-block rounded-md bg-primary px-2.5 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-primary-foreground">
-            CHURCH PROPERTY INVENTORY LOG
-          </span>
+          <p className="font-display text-lg font-bold leading-tight tracking-tight text-foreground">
+            {BRAND.appName}
+          </p>
+          <p className="font-sans text-[11px] font-semibold tracking-wide text-primary">
+            {BRAND.workspaceLabel}
+          </p>
+          <div className="my-2 h-px w-12 bg-border" aria-hidden="true" />
           <CardTitle className="font-display text-xl font-bold">
             Set New Password
           </CardTitle>
           <CardDescription>
-            Choose a strong password for your WINGMACC team account.
+            Choose a strong password for your {BRAND.churchShortName} team account.
           </CardDescription>
         </CardHeader>
 
         <CardContent>
           {isLoading ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              Verifying reset session...
-            </p>
+            <FormCardSkeleton label="Verifying reset session..." />
           ) : !user ? (
             <div className="space-y-4 text-center">
               <div
@@ -133,7 +137,9 @@ export function ResetPasswordPage() {
                 <Label htmlFor="reset-new-password">New Password</Label>
                 <PasswordInput
                   id="reset-new-password"
+                  name="password"
                   autoComplete="new-password"
+                  enterKeyHint="next"
                   placeholder="Minimum 6 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -145,7 +151,9 @@ export function ResetPasswordPage() {
                 <Label htmlFor="reset-confirm-password">Confirm Password</Label>
                 <PasswordInput
                   id="reset-confirm-password"
+                  name="confirm_password"
                   autoComplete="new-password"
+                  enterKeyHint="done"
                   placeholder="Re-enter new password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}

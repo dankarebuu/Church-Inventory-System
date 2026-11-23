@@ -28,6 +28,7 @@ import { sortEquipmentTypes } from '@/features/equipmentTypes/useEquipmentTypes'
 import { sortLocations } from '@/features/locations/useLocations';
 import { parseImages } from '@/lib/utils';
 import type { Category, EquipmentType, LocationRecord } from '@/types/database';
+import { compressImageFiles } from './imageCompression';
 import {
   itemFormSchema,
   MAX_GEAR_PHOTOS,
@@ -186,6 +187,7 @@ export function ItemFormDialog({
     reset,
     watch,
     setValue,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<ItemFormInput, unknown, ItemFormValues>({
     resolver: zodResolver(itemFormSchema),
@@ -324,13 +326,30 @@ export function ItemFormDialog({
     setValue('equipment_type', matched ? matched.name : '', { shouldDirty: true });
   };
 
-  const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = '';
     if (files.length === 0) return;
 
     const currentCount = existingPhotos.length + pendingPhotos.length;
-    const validation = validatePhotoFiles(files, currentCount);
+    if (Math.max(0, currentCount) + files.length > MAX_GEAR_PHOTOS) {
+      const msg = `Maximum of ${MAX_GEAR_PHOTOS} photos allowed per item.`;
+      setPhotoError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    for (const file of files) {
+      if (!file.type || !file.type.toLowerCase().startsWith('image/')) {
+        const msg = `"${file.name}" must be a valid image file.`;
+        setPhotoError(msg);
+        toast.error(msg);
+        return;
+      }
+    }
+
+    const preparedFiles = await compressImageFiles(files);
+    const validation = validatePhotoFiles(preparedFiles, currentCount);
     if (!validation.valid) {
       setPhotoError(validation.error);
       toast.error(validation.error ?? 'Invalid photo selection.');
@@ -338,7 +357,7 @@ export function ItemFormDialog({
     }
 
     setPhotoError(null);
-    const additions: PendingPhoto[] = files.map((file, idx) => {
+    const additions: PendingPhoto[] = preparedFiles.map((file, idx) => {
       const previewUrl = URL.createObjectURL(file);
       activeObjectUrlsRef.current.add(previewUrl);
       return {
@@ -370,6 +389,14 @@ export function ItemFormDialog({
   const onValidSubmit = async (values: ItemFormValues) => {
     if (isOffline) return;
     setSubmitError(null);
+
+    if (item && item.qty_on_loan > 0 && values.qty < item.qty_on_loan) {
+      setError('qty', {
+        type: 'manual',
+        message: `Quantity cannot be less than ${item.qty_on_loan} (${item.qty_on_loan} currently on loan).`,
+      });
+      return;
+    }
 
     const matchedCat = values.category_id
       ? topCategories.find((cat) => cat.id === values.category_id)
@@ -432,7 +459,7 @@ export function ItemFormDialog({
           <DialogDescription>
             {item
               ? 'Update gear specifications, storage location, condition, or photos.'
-              : 'Log a new equipment item into the WINGMACC band inventory.'}
+              : 'Log a new equipment item into the inventory.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -457,10 +484,14 @@ export function ItemFormDialog({
               <Input
                 id="item-name-input"
                 placeholder="e.g. Shure SM58 Dynamic Mic"
+                aria-invalid={errors.item ? true : undefined}
+                aria-describedby={errors.item ? 'item-name-error' : undefined}
                 {...register('item')}
               />
               {errors.item && (
-                <p className="text-xs text-destructive">{errors.item.message}</p>
+                <p id="item-name-error" className="text-xs text-destructive">
+                  {errors.item.message}
+                </p>
               )}
             </div>
 
@@ -612,12 +643,22 @@ export function ItemFormDialog({
               <Input
                 id="item-qty-input"
                 type="number"
-                min={0}
+                inputMode="numeric"
+                min={item && item.qty_on_loan > 0 ? item.qty_on_loan : 0}
                 step={1}
+                aria-invalid={errors.qty ? true : undefined}
+                aria-describedby={errors.qty ? 'item-qty-error' : undefined}
                 {...register('qty')}
               />
+              {item && item.qty_on_loan > 0 && !errors.qty && (
+                <p className="text-[11px] text-muted-foreground">
+                  {item.qty_on_loan} currently on loan (minimum quantity: {item.qty_on_loan}).
+                </p>
+              )}
               {errors.qty && (
-                <p className="text-xs text-destructive">{errors.qty.message}</p>
+                <p id="item-qty-error" className="text-xs text-destructive">
+                  {errors.qty.message}
+                </p>
               )}
             </div>
 
@@ -626,13 +667,18 @@ export function ItemFormDialog({
               <Input
                 id="item-min-qty-input"
                 type="number"
+                inputMode="numeric"
                 min={0}
                 step={1}
                 placeholder="Optional threshold (blank = off)"
+                aria-invalid={errors.min_qty ? true : undefined}
+                aria-describedby={errors.min_qty ? 'item-min-qty-error' : undefined}
                 {...register('min_qty')}
               />
               {errors.min_qty && (
-                <p className="text-xs text-destructive">{errors.min_qty.message}</p>
+                <p id="item-min-qty-error" className="text-xs text-destructive">
+                  {errors.min_qty.message}
+                </p>
               )}
             </div>
 
@@ -710,7 +756,7 @@ export function ItemFormDialog({
                 accept="image/*"
                 multiple
                 disabled={totalPhotoCount >= MAX_GEAR_PHOTOS || busy}
-                onChange={handleFilesSelected}
+                onChange={(event) => void handleFilesSelected(event)}
                 className="sr-only"
               />
             </div>

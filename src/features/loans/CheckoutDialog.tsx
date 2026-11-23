@@ -276,7 +276,7 @@ export function CheckoutDialog({
               <span className="truncate font-medium text-foreground">
                 {selectedItem.item}
               </span>
-              <span className="shrink-0 font-mono font-semibold text-foreground">
+              <span className="shrink-0 font-sans font-semibold tabular-nums text-foreground">
                 Available: {selectedItem.available_qty} / {selectedItem.qty}
               </span>
             </div>
@@ -287,11 +287,16 @@ export function CheckoutDialog({
               <Label htmlFor="checkout-borrower-name">Borrower Name *</Label>
               <Input
                 id="checkout-borrower-name"
+                autoComplete="name"
                 placeholder="e.g. Joel Santos"
+                aria-invalid={errors.borrower_name ? true : undefined}
+                aria-describedby={errors.borrower_name ? 'checkout-borrower-error' : undefined}
                 {...register('borrower_name')}
               />
               {errors.borrower_name && (
-                <p className="text-xs text-destructive">{errors.borrower_name.message}</p>
+                <p id="checkout-borrower-error" className="text-xs text-destructive">
+                  {errors.borrower_name.message}
+                </p>
               )}
             </div>
 
@@ -300,10 +305,12 @@ export function CheckoutDialog({
               <Input
                 id="checkout-borrower-contact"
                 placeholder="Phone number or email (optional)"
+                aria-invalid={errors.borrower_contact ? true : undefined}
+                aria-describedby={errors.borrower_contact ? 'checkout-contact-error' : undefined}
                 {...register('borrower_contact')}
               />
               {errors.borrower_contact && (
-                <p className="text-xs text-destructive">
+                <p id="checkout-contact-error" className="text-xs text-destructive">
                   {errors.borrower_contact.message}
                 </p>
               )}
@@ -314,13 +321,18 @@ export function CheckoutDialog({
               <Input
                 id="checkout-qty-loaned"
                 type="number"
+                inputMode="numeric"
                 min={1}
                 max={selectedItem ? Math.max(selectedItem.available_qty, 1) : undefined}
                 step={1}
+                aria-invalid={errors.qty_loaned ? true : undefined}
+                aria-describedby={errors.qty_loaned ? 'checkout-qty-error' : undefined}
                 {...register('qty_loaned')}
               />
               {errors.qty_loaned && (
-                <p className="text-xs text-destructive">{errors.qty_loaned.message}</p>
+                <p id="checkout-qty-error" className="text-xs text-destructive">
+                  {errors.qty_loaned.message}
+                </p>
               )}
             </div>
 

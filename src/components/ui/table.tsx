@@ -1,9 +1,26 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-export function Table({ className, ...props }: React.ComponentProps<'table'>) {
+export function Table({
+  className,
+  containerClassName,
+  containerLabel = 'Data table',
+  ...props
+}: React.ComponentProps<'table'> & {
+  containerClassName?: string;
+  containerLabel?: string;
+}) {
   return (
-    <div data-slot="table-container" className="relative w-full overflow-x-auto">
+    <div
+      data-slot="table-container"
+      tabIndex={0}
+      role="region"
+      aria-label={containerLabel}
+      className={cn(
+        'table-scroll-region relative w-full overflow-x-auto overscroll-x-contain rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        containerClassName
+      )}
+    >
       <table
         data-slot="table"
         className={cn('w-full caption-bottom text-sm', className)}
@@ -56,12 +73,17 @@ export function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
   );
 }
 
-export function TableHead({ className, ...props }: React.ComponentProps<'th'>) {
+export function TableHead({
+  className,
+  scope = 'col',
+  ...props
+}: React.ComponentProps<'th'>) {
   return (
     <th
       data-slot="table-head"
+      scope={scope}
       className={cn(
-        'h-10 px-3 text-left align-middle font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap [&:has([role=checkbox])]:pr-0',
+        'h-10 px-3 text-left align-middle font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap [&:has([role=checkbox])]:pr-0',
         className
       )}
       {...props}

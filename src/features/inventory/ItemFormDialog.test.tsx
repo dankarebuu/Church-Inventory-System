@@ -409,4 +409,23 @@ describe('ItemFormDialog', () => {
     expect(mockSaveItem.mock.calls[0][0].values.equipment_type).toBe('');
     expect(mockSaveItem.mock.calls[0][0].values.min_qty).toBe(0);
   });
+
+  it('prevents lowering quantity below active qty_on_loan and displays loan minimum hint', async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      item: makeItem({ qty: 4, qty_on_loan: 3, available_qty: 1 }),
+    });
+
+    expect(screen.getByText(/3 currently on loan \(minimum quantity: 3\)/i)).toBeInTheDocument();
+
+    const qtyInput = screen.getByLabelText(/quantity/i);
+    await user.clear(qtyInput);
+    await user.type(qtyInput, '2');
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(
+      await screen.findByText(/quantity cannot be less than 3/i)
+    ).toBeInTheDocument();
+    expect(mockSaveItem).not.toHaveBeenCalled();
+  });
 });

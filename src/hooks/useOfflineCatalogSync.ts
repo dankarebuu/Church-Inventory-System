@@ -7,7 +7,7 @@ import {
   setActiveOfflineCacheUserId,
   type SaveOfflineSnapshotInput,
 } from '@/lib/offlineCache';
-import { queryKeys } from '@/lib/queryKeys';
+import { clearPrivateQueries, queryKeys } from '@/lib/queryKeys';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import type { Category, EquipmentType, LocationRecord, UserRole } from '@/types/database';
 
@@ -83,6 +83,7 @@ export function useOfflineCatalogSync({
 
       if (scopeChanged) {
         queryClient.removeQueries({ queryKey: ['inventory'] });
+        clearPrivateQueries(queryClient);
       } else {
         queryClient.removeQueries({ queryKey: queryKeys.inventory('guest') });
       }

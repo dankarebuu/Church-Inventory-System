@@ -191,7 +191,7 @@ describe('ItemDetailDrawer', () => {
     expect(mockUseItemComments).not.toHaveBeenCalled();
   });
 
-  it('supports Take / Add Photo for Members and Admins with capture="environment", 4-photo cap, and immediate refresh', async () => {
+  it('supports Take / Add Photo for Members and Admins (allowing camera and library), 4-photo cap, and immediate refresh', async () => {
     const user = userEvent.setup();
     const onAddPhoto = vi.fn().mockResolvedValue(undefined);
     const queryClient = new QueryClient({
@@ -229,7 +229,7 @@ describe('ItemDetailDrawer', () => {
     const fileInput = drawer.querySelector('input[type="file"]') as HTMLInputElement;
     expect(fileInput).not.toBeNull();
     expect(fileInput).toHaveAttribute('accept', 'image/*');
-    expect(fileInput).toHaveAttribute('capture', 'environment');
+    expect(fileInput).not.toHaveAttribute('capture');
     expect(fileInput).toHaveClass('hidden');
 
     const imgFile = new File(['photo-bytes'], 'mic-stage.jpg', { type: 'image/jpeg' });
@@ -503,9 +503,11 @@ describe('ItemDetailDrawer', () => {
 
       const drawer = screen.getByRole('dialog');
       expect(within(drawer).getByAltText('Shure SM58 photo 1')).toBeInTheDocument();
+      expect(within(drawer).getByLabelText('Photo 1 of 2')).toHaveTextContent('1 / 2');
 
       await user.click(within(drawer).getByRole('button', { name: /next photo/i }));
       expect(within(drawer).getByAltText('Shure SM58 photo 2')).toBeInTheDocument();
+      expect(within(drawer).getByLabelText('Photo 2 of 2')).toHaveTextContent('2 / 2');
 
       // Closing the drawer keeps the sheet mounted during exit animation and must stay on photo 2
       rerender(

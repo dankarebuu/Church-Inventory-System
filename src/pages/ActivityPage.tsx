@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { FeedListSkeleton } from '@/components/ui/skeleton';
 import {
   describeHistoryEntry,
   resolveHistoryItemName,
@@ -154,6 +155,9 @@ export function ActivityPage() {
 
   const {
     entries,
+    hasMore = false,
+    loadMore,
+    isFetchingMore = false,
     isLoading,
     isError,
     error,
@@ -240,7 +244,7 @@ export function ActivityPage() {
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-primary">
             Audit Trail
           </span>
           <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -271,7 +275,13 @@ export function ActivityPage() {
             aria-hidden="true"
           />
           <Input
+            id="activity-search"
+            name="q"
             type="search"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="Search by item, user email, borrower, or change..."
@@ -312,15 +322,7 @@ export function ActivityPage() {
 
       {/* Main Content */}
       {isLoading ? (
-        <div
-          role="status"
-          className="flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-8 text-muted-foreground shadow-card"
-        >
-          <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
-          <span className="font-mono text-xs uppercase tracking-wider">
-            Loading activity log...
-          </span>
-        </div>
+        <FeedListSkeleton label="Loading activity log..." rows={5} />
       ) : isError ? (
         <div
           role="alert"
@@ -382,7 +384,7 @@ export function ActivityPage() {
                 key={entry.id}
                 data-testid={`activity-entry-${entry.id}`}
                 className={cn(
-                  'flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-card transition-opacity sm:flex-row sm:items-center sm:justify-between',
+                  'card-accent-hover flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-card sm:flex-row sm:items-center sm:justify-between',
                   entry.undone && 'opacity-60'
                 )}
               >
@@ -398,7 +400,7 @@ export function ActivityPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={meta.badgeVariant}>{meta.label}</Badge>
                       {entry.undone && <Badge variant="outline">Undone</Badge>}
-                      <span className="font-mono text-[11px] text-muted-foreground">
+                      <span className="font-sans text-xs tabular-nums text-muted-foreground">
                         {formatHistoryTimestamp(entry.timestamp)}
                       </span>
                     </div>
@@ -434,7 +436,7 @@ export function ActivityPage() {
                       </p>
                     </div>
 
-                    <p className="font-mono text-[11px] text-muted-foreground">
+                    <p className="break-words font-sans text-xs text-muted-foreground">
                       by <span className="font-semibold text-foreground">{actorName}</span> (
                       {entry.user_email})
                     </p>
@@ -481,6 +483,22 @@ export function ActivityPage() {
               </article>
             );
           })}
+
+          {hasMore && loadMore && (
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingMore}
+                onClick={loadMore}
+              >
+                {isFetchingMore && (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                )}
+                <span>{isFetchingMore ? 'Loading older activity...' : 'Load Older Activity'}</span>
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </section>

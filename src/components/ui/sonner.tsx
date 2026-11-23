@@ -32,7 +32,7 @@ export function Toaster({ theme, toastOptions, ...props }: ToasterProps) {
           toast:
             'font-sans border border-border bg-card text-card-foreground shadow-modal rounded-xl',
           description: 'text-muted-foreground',
-          actionButton: 'bg-primary text-primary-foreground',
+          actionButton: 'bg-primary-fill text-primary-foreground',
           cancelButton: 'bg-secondary text-secondary-foreground',
           ...toastOptions?.classNames,
         },

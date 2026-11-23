@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { TableRowsSkeleton } from '@/components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -152,7 +153,7 @@ export function TeamPage() {
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-primary">
             Admin Only
           </span>
           <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -193,7 +194,7 @@ export function TeamPage() {
           <p>
             New user invitations, email confirmations, and account removals remain managed in the{' '}
             <span className="font-semibold text-foreground">Supabase Auth Dashboard</span>. New
-            accounts automatically receive <span className="font-mono font-semibold">Band Member</span>{' '}
+            accounts automatically receive <span className="font-sans font-semibold text-foreground">Band Member</span>{' '}
             access and can be promoted or demoted here.
           </p>
         </div>
@@ -207,7 +208,13 @@ export function TeamPage() {
             aria-hidden="true"
           />
           <Input
+            id="team-search"
+            name="q"
             type="search"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="Search team members by name or email..."
@@ -248,15 +255,7 @@ export function TeamPage() {
 
       {/* Main Content */}
       {isLoading ? (
-        <div
-          role="status"
-          className="flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-8 text-muted-foreground shadow-card"
-        >
-          <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
-          <span className="font-mono text-xs uppercase tracking-wider">
-            Loading team profiles...
-          </span>
-        </div>
+        <TableRowsSkeleton label="Loading team profiles..." rows={5} showAvatarCircle />
       ) : isError ? (
         <div
           role="alert"
@@ -306,8 +305,11 @@ export function TeamPage() {
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card shadow-card">
-          <Table>
-            <TableHeader>
+          <Table
+            containerLabel="Team roles table"
+            containerClassName="max-md:overflow-x-visible"
+          >
+            <TableHeader className="max-md:hidden">
               <TableRow className="hover:bg-transparent">
                 <TableHead>Team Member</TableHead>
                 <TableHead>Email</TableHead>
@@ -316,7 +318,7 @@ export function TeamPage() {
                 <TableHead className="text-right">Access Control</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="max-md:block max-md:divide-y max-md:divide-border">
               {filteredProfiles.map((profile) => {
                 const displayName = getProfileDisplayName(profile);
                 const initials = getInitials(displayName);
@@ -326,17 +328,20 @@ export function TeamPage() {
                 const isRowUpdating = updatingProfileId === profile.id;
 
                 return (
-                  <TableRow key={profile.id}>
-                    <TableCell>
-                      <div className="flex min-w-[180px] items-center gap-3">
+                  <TableRow
+                    key={profile.id}
+                    className="max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-2.5 max-md:border-0 max-md:px-4 max-md:py-4"
+                  >
+                    <TableCell className="max-md:col-span-2 max-md:p-0">
+                      <div className="flex min-w-0 items-center gap-3 md:min-w-[180px]">
                         <span
                           aria-hidden="true"
-                          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 font-mono text-xs font-bold text-primary"
+                          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-xs font-bold text-primary"
                         >
                           {initials}
                         </span>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-semibold text-foreground">
+                          <span className="font-display font-semibold text-foreground md:font-sans">
                             {displayName}
                           </span>
                           {isSelf && <Badge variant="outline">You</Badge>}
@@ -344,11 +349,14 @@ export function TeamPage() {
                       </div>
                     </TableCell>
 
-                    <TableCell className="font-mono text-xs text-muted-foreground">
+                    <TableCell
+                      data-label="Email"
+                      className="mobile-table-card-cell break-all font-sans text-xs text-muted-foreground max-md:col-span-2 max-md:p-0"
+                    >
                       {profile.email}
                     </TableCell>
 
-                    <TableCell>
+                    <TableCell data-label="Role" className="mobile-table-card-cell max-md:p-0">
                       <Badge
                         variant={isAdminProfile ? 'default' : 'secondary'}
                         className="gap-1"
@@ -362,16 +370,20 @@ export function TeamPage() {
                       </Badge>
                     </TableCell>
 
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                    <TableCell
+                      data-label="Joined"
+                      className="mobile-table-card-cell whitespace-nowrap text-xs tabular-nums text-muted-foreground max-md:justify-self-end max-md:p-0 max-md:text-right"
+                    >
                       {formatDisplayDate(profile.created_at)}
                     </TableCell>
 
-                    <TableCell className="text-right">
-                      <div className="flex flex-col items-end gap-1">
+                    <TableCell className="text-right max-md:col-span-2 max-md:mt-0.5 max-md:border-t max-md:border-dashed max-md:border-border max-md:p-0 max-md:pt-2.5 max-md:text-left">
+                      <div className="flex flex-col items-end gap-1 max-md:items-start">
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
+                          className="max-md:w-full"
                           disabled={isLastAdmin || isRowUpdating || isUpdating || isOffline}
                           onClick={() => handleToggleRole(profile)}
                         >
@@ -392,7 +404,7 @@ export function TeamPage() {
                         </Button>
 
                         {isLastAdmin && (
-                          <span className="font-mono text-[10px] text-muted-foreground">
+                          <span className="font-sans text-[11px] text-muted-foreground">
                             Last admin cannot be demoted
                           </span>
                         )}
@@ -435,7 +447,7 @@ export function TeamPage() {
                   void applyRoleUpdate(pendingSelfDemotion, 'member');
                 }
               }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive-fill text-destructive-foreground hover:bg-destructive-fill/90"
             >
               {isUpdating ? 'Updating...' : 'Confirm Self-Demotion'}
             </AlertDialogAction>

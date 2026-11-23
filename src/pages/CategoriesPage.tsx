@@ -5,7 +5,6 @@ import {
   Edit2,
   FolderOpen,
   FolderPlus,
-  Loader2,
   MapPin,
   Plus,
   RefreshCw,
@@ -28,6 +27,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import { CardGridSkeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/features/auth/useAuth';
 import { CategoryDialog } from '@/features/categories/CategoryDialog';
@@ -338,7 +338,7 @@ export function CategoriesPage() {
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-primary">
             Organization
           </span>
           <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -377,15 +377,11 @@ export function CategoriesPage() {
       )}
 
       {isLoading ? (
-        <div
-          role="status"
-          className="flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-8 text-muted-foreground shadow-card"
-        >
-          <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
-          <span className="font-mono text-xs uppercase tracking-wider">
-            Loading categories & locations...
-          </span>
-        </div>
+        <CardGridSkeleton
+          label="Loading categories & locations..."
+          count={6}
+          withTabsHeader
+        />
       ) : isError ? (
         <div
           role="alert"
@@ -412,19 +408,19 @@ export function CategoriesPage() {
           <TabsList>
             <TabsTrigger value="categories">
               <span>Rig Categories</span>
-              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-sans text-[10px] font-semibold tabular-nums text-muted-foreground">
                 {categoryTree.length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="locations">
               <span>Storage Locations</span>
-              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-sans text-[10px] font-semibold tabular-nums text-muted-foreground">
                 {sortedLocations.length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="types">
               <span>Equipment Types</span>
-              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-sans text-[10px] font-semibold tabular-nums text-muted-foreground">
                 {sortedEquipmentTypes.length}
               </span>
             </TabsTrigger>
@@ -464,7 +460,7 @@ export function CategoriesPage() {
                       key={node.id}
                       aria-labelledby={headingId}
                       style={{ '--card-accent': swatchColor } as CSSProperties}
-                      className="card-accent-hover relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card hover:-translate-y-0.5 hover:shadow-hover"
+                      className="card-accent-hover relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card"
                     >
                       <div
                         aria-hidden="true"
@@ -486,7 +482,7 @@ export function CategoriesPage() {
                             <div className="min-w-0">
                               <h2
                                 id={headingId}
-                                className="font-display truncate text-base font-semibold leading-tight text-foreground"
+                                className="font-display line-clamp-2 break-words text-base font-semibold leading-tight text-foreground"
                               >
                                 {node.name}
                               </h2>
@@ -497,11 +493,11 @@ export function CategoriesPage() {
                                   className="inline-block size-2.5 rounded-full border border-border"
                                   style={{ backgroundColor: swatchColor }}
                                 />
-                                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                                <span className="font-sans text-xs tabular-nums text-muted-foreground">
                                   {formatItemCountLabel(itemCount)}
                                 </span>
                                 {node.subcategories.length > 0 && (
-                                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                                  <span className="font-sans text-xs tabular-nums text-muted-foreground">
                                     · {formatSubcategoryCountLabel(node.subcategories.length)}
                                   </span>
                                 )}
@@ -526,7 +522,7 @@ export function CategoriesPage() {
                       <CardContent className="flex-1 pl-5 pb-4">
                         {node.subcategories.length > 0 ? (
                           <div className="space-y-2">
-                            <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                               Subcategories
                             </p>
                             <div className="flex flex-wrap gap-2">
@@ -554,7 +550,7 @@ export function CategoriesPage() {
                                         aria-hidden="true"
                                       />
                                       <span>{sub.name}</span>
-                                      <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                                      <span className="font-sans text-[11px] tabular-nums text-muted-foreground">
                                         ({subCount})
                                       </span>
                                     </Link>
@@ -671,7 +667,7 @@ export function CategoriesPage() {
                   return (
                     <Card
                       key={loc.id}
-                      className="flex flex-col justify-between p-0 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-hover"
+                      className="card-accent-hover flex flex-col justify-between p-0"
                     >
                       <article
                         aria-labelledby={headingId}
@@ -689,7 +685,7 @@ export function CategoriesPage() {
                               <div className="min-w-0">
                                 <h2
                                   id={headingId}
-                                  className="font-display truncate text-base font-semibold leading-tight text-foreground"
+                                  className="font-display line-clamp-2 break-words text-base font-semibold leading-tight text-foreground"
                                 >
                                   {loc.name}
                                 </h2>
@@ -790,7 +786,7 @@ export function CategoriesPage() {
                       key={et.id}
                       aria-labelledby={headingId}
                       style={{ '--card-accent': swatchColor } as CSSProperties}
-                      className="card-accent-hover relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card hover:-translate-y-0.5 hover:shadow-hover"
+                      className="card-accent-hover relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-card"
                     >
                       <div
                         aria-hidden="true"
@@ -812,7 +808,7 @@ export function CategoriesPage() {
                             <div className="min-w-0">
                               <h2
                                 id={headingId}
-                                className="font-display truncate text-base font-semibold leading-tight text-foreground"
+                                className="font-display line-clamp-2 break-words text-base font-semibold leading-tight text-foreground"
                               >
                                 {et.name}
                               </h2>
@@ -845,8 +841,9 @@ export function CategoriesPage() {
                       </CardHeader>
 
                       <CardContent className="flex-1 pl-5 pb-4">
-                        <p className="font-mono text-[11px] text-muted-foreground">
-                          {swatchColor.toUpperCase()} · Order {et.sort_order}
+                        <p className="font-sans text-xs text-muted-foreground">
+                          <code className="font-mono">{swatchColor.toUpperCase()}</code> · Order{' '}
+                          <span className="tabular-nums">{et.sort_order}</span>
                         </p>
                       </CardContent>
 
@@ -985,7 +982,7 @@ export function CategoriesPage() {
                     event.preventDefault();
                     void handleConfirmDeleteCategory();
                   }}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  className="bg-destructive-fill text-destructive-foreground hover:bg-destructive-fill/90"
                 >
                   {isDeletingCategory
                     ? 'Deleting...'
@@ -1033,7 +1030,7 @@ export function CategoriesPage() {
                     event.preventDefault();
                     void handleConfirmDeleteLocation();
                   }}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  className="bg-destructive-fill text-destructive-foreground hover:bg-destructive-fill/90"
                 >
                   {isDeletingLocation ? 'Deleting...' : 'Delete Location'}
                 </AlertDialogAction>
@@ -1081,7 +1078,7 @@ export function CategoriesPage() {
                     event.preventDefault();
                     void handleConfirmDeleteEquipmentType();
                   }}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  className="bg-destructive-fill text-destructive-foreground hover:bg-destructive-fill/90"
                 >
                   {isDeletingEquipmentType ? 'Deleting...' : 'Delete Equipment Type'}
                 </AlertDialogAction>

@@ -50,10 +50,10 @@ export function QuickCheckButtons({
             aria-pressed={isActive}
             onClick={() => void onQuickCheck?.(item, action.condition)}
             className={cn(
-              'font-mono transition-[transform,scale,background-color,border-color,color,box-shadow] duration-150 ease-out enabled:active:scale-[0.96]',
+              'font-sans font-semibold transition-[transform,scale,background-color,border-color,color,box-shadow] duration-150 ease-out enabled:active:scale-[0.96]',
               isChecklistSize
                 ? 'h-11 min-h-11 px-3 text-xs font-semibold'
-                : cn('text-[11px]', layout === 'grid' ? 'h-8 px-2' : 'h-7 px-2'),
+                : cn('text-xs md:text-[11px]', layout === 'grid' ? 'h-9 px-2 md:h-8' : 'h-8 px-2.5 md:h-7 md:px-2'),
               isActive ? action.activeClassName : action.hoverClassName
             )}
           >

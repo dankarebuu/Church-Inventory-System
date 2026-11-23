@@ -1,14 +1,17 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { MobileBottomNav } from './MobileBottomNav';
 
 describe('MobileBottomNav', () => {
-  it('renders Guest tabs (Dashboard, Inventory, Checklist, Categories) without Loans or More', () => {
+  it('renders Guest tabs (Dashboard, Inventory, Checklist, Categories) with the centered Steward trigger and triggers onOpenMore on tap or swipe up', async () => {
+    const user = userEvent.setup();
+    const onOpenMore = vi.fn();
+
     render(
       <MemoryRouter initialEntries={['/inventory']}>
-        <MobileBottomNav role="guest" onOpenMore={vi.fn()} />
+        <MobileBottomNav role="guest" onOpenMore={onOpenMore} />
       </MemoryRouter>
     );
 
@@ -24,10 +27,19 @@ describe('MobileBottomNav', () => {
     expect(within(nav).getByRole('link', { name: 'Categories' })).toHaveAttribute('href', '/categories');
 
     expect(within(nav).queryByRole('link', { name: 'Loans' })).not.toBeInTheDocument();
-    expect(within(nav).queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
+
+    const stewardButton = within(nav).getByRole('button', { name: 'Open Steward menu' });
+    await user.click(stewardButton);
+    expect(onOpenMore).toHaveBeenCalledTimes(1);
+
+    // Swiping upward on the center dome opens the sheet
+    fireEvent.pointerDown(stewardButton, { pointerId: 1, button: 0, clientY: 800 });
+    fireEvent.pointerMove(stewardButton, { pointerId: 1, clientY: 760 });
+    fireEvent.pointerUp(stewardButton, { pointerId: 1, clientY: 760 });
+    expect(onOpenMore).toHaveBeenCalledTimes(2);
   });
 
-  it('renders Member & Admin tabs (Dashboard, Inventory, Checklist, Loans, More) and triggers onOpenMore', async () => {
+  it('renders Member & Admin tabs (Dashboard, Inventory, Steward, Checklist, Loans) and tracks open state', async () => {
     const user = userEvent.setup();
     const onOpenMore = vi.fn();
 
@@ -46,8 +58,8 @@ describe('MobileBottomNav', () => {
     expect(loansLink).toHaveAttribute('aria-current', 'page');
     expect(within(nav).queryByRole('link', { name: 'Categories' })).not.toBeInTheDocument();
 
-    const moreButton = within(nav).getByRole('button', { name: 'More' });
-    await user.click(moreButton);
+    const stewardButton = within(nav).getByRole('button', { name: 'Open Steward menu' });
+    await user.click(stewardButton);
     expect(onOpenMore).toHaveBeenCalledTimes(1);
     unmount();
 
@@ -56,7 +68,7 @@ describe('MobileBottomNav', () => {
         <MobileBottomNav role="admin" onOpenMore={onOpenMore} isMoreOpen={true} />
       </MemoryRouter>
     );
-    const adminMore = screen.getByRole('button', { name: 'More' });
-    expect(adminMore).toHaveAttribute('aria-expanded', 'true');
+    const adminSteward = screen.getByRole('button', { name: 'Open Steward menu' });
+    expect(adminSteward).toHaveAttribute('aria-expanded', 'true');
   });
 });

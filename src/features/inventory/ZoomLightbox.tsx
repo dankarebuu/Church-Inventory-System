@@ -313,7 +313,7 @@ export function ZoomLightbox({
             {title}
           </span>
           {images.length > 1 && (
-            <span className="rounded-full bg-white/10 px-2.5 py-0.5 font-mono text-[11px] text-white/80">
+            <span className="rounded-full bg-white/10 px-2.5 py-0.5 font-sans text-[11px] tabular-nums text-white/80">
               {activeIndex + 1} / {images.length}
             </span>
           )}
@@ -337,7 +337,7 @@ export function ZoomLightbox({
             size="sm"
             onClick={handleToggleZoom}
             aria-label={isZoomed ? 'Reset zoom' : 'Zoom in'}
-            className="font-mono text-xs text-white hover:bg-white/15 hover:text-white"
+            className="font-sans text-xs tabular-nums text-white hover:bg-white/15 hover:text-white"
           >
             <ZoomIn className="size-4" aria-hidden="true" />
             <span>{Math.round(scale * 100)}%</span>
@@ -428,7 +428,7 @@ export function ZoomLightbox({
         )}
       </div>
 
-      <div className="px-4 pb-4 text-center font-mono text-[11px] text-white/65">
+      <div className="px-4 pb-4 text-center font-sans text-xs text-white/65">
         Double-click or pinch to zoom · Drag to pan · Press Esc to close
       </div>
     </div>

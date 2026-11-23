@@ -765,7 +765,9 @@ describe('DashboardPage', () => {
       </QueryClientProvider>
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent(/loading operations dashboard/i);
+    const loadingStatus = screen.getByRole('status');
+    expect(loadingStatus).toHaveTextContent(/loading operations dashboard/i);
+    expect(loadingStatus.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
   });
 
   it('renders legacy outlier history actions and unexpected item condition values safely without crashing', () => {
@@ -859,5 +861,61 @@ describe('DashboardPage', () => {
     expect(
       within(healthPanel).getByRole('progressbar', { name: /Spares & Shared health 0%/i })
     ).toHaveAttribute('aria-valuenow', '0');
+  });
+
+  it('leads with Working Items hero ratio, target-gap & freshness comparisons, sorted attention bars, and 14-day check-off trend', () => {
+    const todayIso = `${makeLocalYmdOffset(0)}T09:00:00`;
+    const staleIso = `${makeLocalYmdOffset(-20)}T09:00:00`;
+    const recentItems = makeSampleItems('guest').map((item, idx) => ({
+      ...item,
+      checked_at: idx < 3 ? todayIso : staleIso,
+    }));
+
+    renderDashboard({ role: 'guest', items: recentItems });
+
+    // Hero card: one number first + comparison context (2 of 4 working, 50% ready, 2 below target, 75% checked in 7 days)
+    const workingHero = screen.getByTestId('kpi-working');
+    expect(within(workingHero).getByText('2')).toBeInTheDocument();
+    expect(within(workingHero).getByText(/of 4 working/i)).toBeInTheDocument();
+    expect(within(workingHero).getByText(/2 below 100% target/i)).toBeInTheDocument();
+    expect(within(workingHero).getByText(/50% ready/i)).toBeInTheDocument();
+    expect(within(workingHero).getByText(/75% checked in last 7 days \(3 of 4\)/i)).toBeInTheDocument();
+
+    // Chart 1: "Which groups need attention?" sorts 0% readiness ahead of 100% Instruments
+    const healthPanel = screen.getByTestId('dashboard-category-health');
+    expect(within(healthPanel).getByRole('heading', { name: /which groups need attention\?/i })).toBeInTheDocument();
+    const bars = within(healthPanel).getAllByRole('progressbar');
+    expect(bars[0]).toHaveAttribute('aria-valuenow', '0');
+    expect(bars[1]).toHaveAttribute('aria-valuenow', '0');
+    expect(bars[2]).toHaveAttribute('aria-valuenow', '100');
+
+    // Chart 2: "Are we checking gear regularly?" plots direct-labeled 14-day SVG trend for Guests
+    const trendPanel = screen.getByTestId('dashboard-checkoff-trend');
+    expect(within(trendPanel).getByRole('heading', { name: /are we checking gear regularly\?/i })).toBeInTheDocument();
+    expect(within(trendPanel).getByRole('img', { name: /3 items checked.*3 checked today/i })).toBeInTheDocument();
+    expect(within(trendPanel).getByText('Today: 3')).toBeInTheDocument();
+    expect(mockUseActivityLog).toHaveBeenCalledWith(false);
+  });
+
+  it('shows 100% on-target comparison and empty check-off trend guidance when no recent checks exist', () => {
+    const staleWorkingItems = makeSampleItems('guest').map((item) => ({
+      ...item,
+      condition: 'working' as const,
+      checked_at: null,
+    }));
+
+    renderDashboard({ role: 'guest', items: staleWorkingItems });
+
+    const workingHero = screen.getByTestId('kpi-working');
+    expect(within(workingHero).getByText(/on target for sunday/i)).toBeInTheDocument();
+    expect(within(workingHero).getByText(/100% ready/i)).toBeInTheDocument();
+    expect(within(workingHero).getByText(/0% checked in last 7 days \(0 of 4\)/i)).toBeInTheDocument();
+
+    const trendPanel = screen.getByTestId('dashboard-checkoff-trend');
+    expect(within(trendPanel).getByText(/no gear checked off in the last 14 days/i)).toBeInTheDocument();
+    expect(within(trendPanel).getByRole('link', { name: /open sunday checklist/i })).toHaveAttribute(
+      'href',
+      '/checklist'
+    );
   });
 });
